@@ -7,7 +7,8 @@ spring:
   application:
     name: zokomart-admin
   profiles:
-    active: dev
+    # local 为本地未提交 profile（application-local.yml，已 gitignore），用于注入密钥，覆盖 dev 中的占位
+    active: dev,local
   flyway:
     enabled: true
     locations: classpath:db/migration
