@@ -1,5 +1,7 @@
 package africa.zokomart.admin.module.product.controller;
 
+import io.swagger.v3.oas.annotations.tags.Tag;
+
 import africa.zokomart.admin.common.result.Result;
 import africa.zokomart.admin.module.product.dto.ProductSkuSaveDTO;
 import africa.zokomart.admin.module.product.service.ProductSkuService;
@@ -12,6 +14,7 @@ import org.springframework.web.bind.annotation.*;
 @RestController
 @RequestMapping("/api/product-skus")
 @RequiredArgsConstructor
+@Tag(name = "商品 SKU")
 public class ProductSkuController {
 
     private final ProductSkuService skuService;

@@ -1,5 +1,7 @@
 package africa.zokomart.admin.module.basedata.controller;
 
+import io.swagger.v3.oas.annotations.tags.Tag;
+
 import africa.zokomart.admin.common.result.Result;
 import africa.zokomart.admin.module.basedata.dto.CategorySaveDTO;
 import africa.zokomart.admin.module.basedata.service.CategoryService;
@@ -14,6 +16,7 @@ import java.util.List;
 @RestController
 @RequestMapping("/api/categories")
 @RequiredArgsConstructor
+@Tag(name = "分类管理")
 public class CategoryController {
 
     private final CategoryService categoryService;

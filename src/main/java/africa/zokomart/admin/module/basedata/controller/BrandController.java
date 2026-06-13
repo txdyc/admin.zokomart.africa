@@ -1,5 +1,7 @@
 package africa.zokomart.admin.module.basedata.controller;
 
+import io.swagger.v3.oas.annotations.tags.Tag;
+
 import africa.zokomart.admin.common.result.PageResult;
 import africa.zokomart.admin.common.result.Result;
 import africa.zokomart.admin.module.basedata.dto.BrandSaveDTO;
@@ -13,6 +15,7 @@ import org.springframework.web.bind.annotation.*;
 @RestController
 @RequestMapping("/api/brands")
 @RequiredArgsConstructor
+@Tag(name = "品牌管理")
 public class BrandController {
 
     private final BrandService brandService;

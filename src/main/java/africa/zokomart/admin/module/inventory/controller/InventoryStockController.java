@@ -1,5 +1,7 @@
 package africa.zokomart.admin.module.inventory.controller;
 
+import io.swagger.v3.oas.annotations.tags.Tag;
+
 import africa.zokomart.admin.common.result.PageResult;
 import africa.zokomart.admin.common.result.Result;
 import africa.zokomart.admin.module.inventory.dto.StockAdjustDTO;
@@ -13,6 +15,7 @@ import org.springframework.web.bind.annotation.*;
 @RestController
 @RequestMapping("/api/inventory/stocks")
 @RequiredArgsConstructor
+@Tag(name = "库存管理")
 public class InventoryStockController {
 
     private final InventoryStockService stockService;

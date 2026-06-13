@@ -1,5 +1,7 @@
 package africa.zokomart.admin.module.product.controller;
 
+import io.swagger.v3.oas.annotations.tags.Tag;
+
 import africa.zokomart.admin.common.result.PageResult;
 import africa.zokomart.admin.common.result.Result;
 import africa.zokomart.admin.module.product.dto.ProductSpuSaveDTO;
@@ -17,6 +19,7 @@ import java.util.List;
 @RestController
 @RequestMapping("/api/product-spus")
 @RequiredArgsConstructor
+@Tag(name = "商品 SPU")
 public class ProductSpuController {
 
     private final ProductSpuService spuService;

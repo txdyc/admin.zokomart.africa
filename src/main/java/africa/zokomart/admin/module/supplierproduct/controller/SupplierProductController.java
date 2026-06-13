@@ -1,5 +1,7 @@
 package africa.zokomart.admin.module.supplierproduct.controller;
 
+import io.swagger.v3.oas.annotations.tags.Tag;
+
 import africa.zokomart.admin.common.result.PageResult;
 import africa.zokomart.admin.common.result.Result;
 import africa.zokomart.admin.module.basedata.vo.BrandVO;
@@ -16,6 +18,7 @@ import java.util.List;
 
 @RestController
 @RequiredArgsConstructor
+@Tag(name = "供应商产品")
 public class SupplierProductController {
 
     private final SupplierProductService supplierProductService;

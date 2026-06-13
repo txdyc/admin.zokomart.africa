@@ -1,5 +1,7 @@
 package africa.zokomart.admin.module.system.controller;
 
+import io.swagger.v3.oas.annotations.tags.Tag;
+
 import africa.zokomart.admin.common.result.PageResult;
 import africa.zokomart.admin.common.result.Result;
 import africa.zokomart.admin.module.system.dto.AssignRolesDTO;
@@ -16,6 +18,7 @@ import org.springframework.web.bind.annotation.*;
 @RestController
 @RequestMapping("/api/system/users")
 @RequiredArgsConstructor
+@Tag(name = "用户管理")
 public class SysUserController {
 
     private final SysUserService userService;

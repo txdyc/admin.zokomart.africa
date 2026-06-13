@@ -1,5 +1,7 @@
 package africa.zokomart.admin.module.system.controller;
 
+import io.swagger.v3.oas.annotations.tags.Tag;
+
 import africa.zokomart.admin.common.result.PageResult;
 import africa.zokomart.admin.common.result.Result;
 import africa.zokomart.admin.module.system.dto.RoleSaveDTO;
@@ -13,6 +15,7 @@ import org.springframework.web.bind.annotation.*;
 @RestController
 @RequestMapping("/api/system/roles")
 @RequiredArgsConstructor
+@Tag(name = "角色管理")
 public class SysRoleController {
 
     private final SysRoleService roleService;

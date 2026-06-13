@@ -1,5 +1,7 @@
 package africa.zokomart.admin.module.purchase.controller;
 
+import io.swagger.v3.oas.annotations.tags.Tag;
+
 import africa.zokomart.admin.common.result.PageResult;
 import africa.zokomart.admin.common.result.Result;
 import africa.zokomart.admin.module.purchase.dto.PaymentMarkDTO;
@@ -14,6 +16,7 @@ import org.springframework.web.bind.annotation.*;
 @RestController
 @RequestMapping("/api/purchase-orders")
 @RequiredArgsConstructor
+@Tag(name = "采购订单")
 public class PurchaseOrderController {
 
     private final PurchaseOrderService orderService;

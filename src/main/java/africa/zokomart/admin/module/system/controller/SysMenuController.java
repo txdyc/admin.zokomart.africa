@@ -1,5 +1,7 @@
 package africa.zokomart.admin.module.system.controller;
 
+import io.swagger.v3.oas.annotations.tags.Tag;
+
 import africa.zokomart.admin.common.result.Result;
 import africa.zokomart.admin.module.system.dto.MenuSaveDTO;
 import africa.zokomart.admin.module.system.service.SysMenuService;
@@ -14,6 +16,7 @@ import java.util.List;
 @RestController
 @RequestMapping("/api/system/menus")
 @RequiredArgsConstructor
+@Tag(name = "菜单管理")
 public class SysMenuController {
 
     private final SysMenuService menuService;

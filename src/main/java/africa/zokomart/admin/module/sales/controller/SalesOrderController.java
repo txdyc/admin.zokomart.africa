@@ -1,5 +1,7 @@
 package africa.zokomart.admin.module.sales.controller;
 
+import io.swagger.v3.oas.annotations.tags.Tag;
+
 import africa.zokomart.admin.common.result.PageResult;
 import africa.zokomart.admin.common.result.Result;
 import africa.zokomart.admin.module.sales.dto.SalesOrderCreateDTO;
@@ -14,6 +16,7 @@ import org.springframework.web.bind.annotation.*;
 @RestController
 @RequestMapping("/api/sales-orders")
 @RequiredArgsConstructor
+@Tag(name = "销售订单")
 public class SalesOrderController {
 
     /** 拥有此权限的角色可查看全部销售订单；否则仅本人。 */

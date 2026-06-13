@@ -1,5 +1,7 @@
 package africa.zokomart.admin.module.sales.controller;
 
+import io.swagger.v3.oas.annotations.tags.Tag;
+
 import africa.zokomart.admin.common.result.Result;
 import africa.zokomart.admin.module.sales.dto.DispatchDTO;
 import africa.zokomart.admin.module.sales.dto.RejectDTO;
@@ -13,6 +15,7 @@ import org.springframework.web.bind.annotation.*;
 @RestController
 @RequestMapping("/api/sales-orders")
 @RequiredArgsConstructor
+@Tag(name = "销售物流")
 public class SalesLogisticsController {
 
     private final SalesLogisticsService logisticsService;

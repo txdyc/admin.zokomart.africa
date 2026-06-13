@@ -1,5 +1,7 @@
 package africa.zokomart.admin.module.system.controller;
 
+import io.swagger.v3.oas.annotations.tags.Tag;
+
 import africa.zokomart.admin.common.result.Result;
 import africa.zokomart.admin.module.system.dto.LoginDTO;
 import africa.zokomart.admin.module.system.service.AuthService;
@@ -16,6 +18,7 @@ import org.springframework.web.bind.annotation.RestController;
 @RestController
 @RequestMapping("/api/auth")
 @RequiredArgsConstructor
+@Tag(name = "认证登录")
 public class AuthController {
 
     private final AuthService authService;
