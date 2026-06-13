@@ -1,22 +1,39 @@
 package africa.zokomart.admin.module.inventory.service.impl;
 
 import africa.zokomart.admin.common.exception.BusinessException;
+import africa.zokomart.admin.common.result.PageResult;
 import africa.zokomart.admin.common.result.ResultCode;
+import africa.zokomart.admin.module.basedata.entity.Brand;
+import africa.zokomart.admin.module.basedata.entity.Category;
+import africa.zokomart.admin.module.basedata.entity.Supplier;
+import africa.zokomart.admin.module.basedata.mapper.BrandMapper;
+import africa.zokomart.admin.module.basedata.mapper.CategoryMapper;
+import africa.zokomart.admin.module.basedata.mapper.SupplierMapper;
+import africa.zokomart.admin.module.inventory.constant.InventoryConst;
 import africa.zokomart.admin.module.inventory.entity.InventoryStock;
 import africa.zokomart.admin.module.inventory.entity.InventoryTransaction;
 import africa.zokomart.admin.module.inventory.mapper.InventoryStockMapper;
 import africa.zokomart.admin.module.inventory.mapper.InventoryTransactionMapper;
 import africa.zokomart.admin.module.inventory.service.InventoryStockService;
+import africa.zokomart.admin.module.inventory.vo.InventoryStockVO;
 import africa.zokomart.admin.module.supplierproduct.entity.SupplierProduct;
 import africa.zokomart.admin.module.supplierproduct.mapper.SupplierProductMapper;
 import cn.dev33.satoken.stp.StpUtil;
+import com.baomidou.mybatisplus.core.metadata.IPage;
 import com.baomidou.mybatisplus.core.toolkit.Wrappers;
+import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.util.StringUtils;
 
 import java.time.LocalDateTime;
+import java.util.List;
+import java.util.Map;
+import java.util.Objects;
+import java.util.function.Function;
+import java.util.stream.Collectors;
 
 @Service
 @RequiredArgsConstructor
@@ -27,11 +44,89 @@ public class InventoryStockServiceImpl extends ServiceImpl<InventoryStockMapper,
 
     private final InventoryTransactionMapper txMapper;
     private final SupplierProductMapper supplierProductMapper;
+    private final SupplierMapper supplierMapper;
+    private final BrandMapper brandMapper;
+    private final CategoryMapper categoryMapper;
 
     @Override
     public int getQty(Long supplierProductId) {
         InventoryStock s = findStock(supplierProductId);
         return s == null ? 0 : s.getQuantity();
+    }
+
+    @Override
+    public PageResult<InventoryStockVO> pageStocks(Long supplierId, Long brandId, Long categoryId,
+                                                   String keyword, long current, long size) {
+        IPage<InventoryStock> page = page(new Page<>(current, size),
+                Wrappers.<InventoryStock>lambdaQuery()
+                        .eq(supplierId != null, InventoryStock::getSupplierId, supplierId)
+                        .eq(brandId != null, InventoryStock::getBrandId, brandId)
+                        .eq(categoryId != null, InventoryStock::getCategoryId, categoryId)
+                        .orderByDesc(InventoryStock::getUpdateTime));
+
+        List<InventoryStock> records = page.getRecords();
+        // 批量取名，避免 N+1
+        Map<Long, SupplierProduct> productMap = batchLoad(supplierProductMapper::selectBatchIds,
+                records.stream().map(InventoryStock::getSupplierProductId), SupplierProduct::getId);
+        Map<Long, Supplier> supplierMap = batchLoad(supplierMapper::selectBatchIds,
+                records.stream().map(InventoryStock::getSupplierId), Supplier::getId);
+        Map<Long, Brand> brandMap = batchLoad(brandMapper::selectBatchIds,
+                records.stream().map(InventoryStock::getBrandId), Brand::getId);
+        Map<Long, Category> categoryMap = batchLoad(categoryMapper::selectBatchIds,
+                records.stream().map(InventoryStock::getCategoryId), Category::getId);
+
+        Page<InventoryStockVO> voPage = new Page<>(page.getCurrent(), page.getSize(), page.getTotal());
+        voPage.setRecords(records.stream().map(s -> {
+            InventoryStockVO vo = new InventoryStockVO();
+            vo.setId(s.getId());
+            vo.setSupplierProductId(s.getSupplierProductId());
+            vo.setSupplierId(s.getSupplierId());
+            vo.setBrandId(s.getBrandId());
+            vo.setCategoryId(s.getCategoryId());
+            vo.setQuantity(s.getQuantity());
+            vo.setUpdateTime(s.getUpdateTime());
+            SupplierProduct sp = productMap.get(s.getSupplierProductId());
+            if (sp != null) {
+                vo.setProductName(sp.getName());
+                vo.setProductCode(sp.getProductCode());
+            }
+            Supplier sup = supplierMap.get(s.getSupplierId());
+            if (sup != null) {
+                vo.setSupplierName(sup.getName());
+            }
+            Brand b = brandMap.get(s.getBrandId());
+            if (b != null) {
+                vo.setBrandName(b.getName());
+            }
+            Category c = categoryMap.get(s.getCategoryId());
+            if (c != null) {
+                vo.setCategoryName(c.getName());
+            }
+            return vo;
+        }).toList());
+        return PageResult.of(voPage);
+    }
+
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public void adjust(Long supplierProductId, Integer targetQuantity, String remark) {
+        if (targetQuantity == null || targetQuantity < 0) {
+            throw new BusinessException(ResultCode.BAD_REQUEST, "库存数量不能为负");
+        }
+        int current = getQty(supplierProductId);
+        int delta = targetQuantity - current;
+        changeStock(supplierProductId, delta, InventoryConst.TYPE_MANUAL_ADJUST,
+                InventoryConst.REF_MANUAL, null, null, remark);
+    }
+
+    /** 按 id 列表批量查询并建 id->实体 映射；忽略 null id。 */
+    private <T> Map<Long, T> batchLoad(Function<List<Long>, List<T>> loader,
+                                       java.util.stream.Stream<Long> ids, Function<T, Long> keyFn) {
+        List<Long> idList = ids.filter(Objects::nonNull).distinct().toList();
+        if (idList.isEmpty()) {
+            return new java.util.HashMap<>(); // 可空键安全：记录的外键可能为 null
+        }
+        return loader.apply(idList).stream().collect(Collectors.toMap(keyFn, Function.identity()));
     }
 
     @Override
