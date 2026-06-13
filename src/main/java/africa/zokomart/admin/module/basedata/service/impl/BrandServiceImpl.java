@@ -8,16 +8,21 @@ import africa.zokomart.admin.module.basedata.entity.Brand;
 import africa.zokomart.admin.module.basedata.mapper.BrandMapper;
 import africa.zokomart.admin.module.basedata.service.BrandService;
 import africa.zokomart.admin.module.basedata.vo.BrandVO;
+import africa.zokomart.admin.module.supplierproduct.service.SupplierProductService;
 import com.baomidou.mybatisplus.core.metadata.IPage;
 import com.baomidou.mybatisplus.core.toolkit.Wrappers;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
+import lombok.RequiredArgsConstructor;
 import org.springframework.beans.BeanUtils;
 import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
 
 @Service
+@RequiredArgsConstructor
 public class BrandServiceImpl extends ServiceImpl<BrandMapper, Brand> implements BrandService {
+
+    private final SupplierProductService supplierProductService;
 
     @Override
     public Long createBrand(BrandSaveDTO dto) {
@@ -48,7 +53,9 @@ public class BrandServiceImpl extends ServiceImpl<BrandMapper, Brand> implements
 
     @Override
     public void deleteBrand(Long id) {
-        // 被供应商产品引用的校验在 Phase 4 回填
+        if (supplierProductService.existsByBrandId(id)) {
+            throw new BusinessException(ResultCode.BUSINESS_ERROR, "该品牌已被供应商产品引用，不能删除");
+        }
         removeById(id);
     }
 

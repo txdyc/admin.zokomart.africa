@@ -8,15 +8,20 @@ import africa.zokomart.admin.module.basedata.mapper.CategoryMapper;
 import africa.zokomart.admin.module.basedata.service.CategoryService;
 import africa.zokomart.admin.module.basedata.support.CategoryTreeBuilder;
 import africa.zokomart.admin.module.basedata.vo.CategoryVO;
+import africa.zokomart.admin.module.supplierproduct.service.SupplierProductService;
 import com.baomidou.mybatisplus.core.toolkit.Wrappers;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
+import lombok.RequiredArgsConstructor;
 import org.springframework.beans.BeanUtils;
 import org.springframework.stereotype.Service;
 
 import java.util.List;
 
 @Service
+@RequiredArgsConstructor
 public class CategoryServiceImpl extends ServiceImpl<CategoryMapper, Category> implements CategoryService {
+
+    private final SupplierProductService supplierProductService;
 
     @Override
     public Long createCategory(CategorySaveDTO dto) {
@@ -50,6 +55,9 @@ public class CategoryServiceImpl extends ServiceImpl<CategoryMapper, Category> i
         boolean hasChild = exists(Wrappers.<Category>lambdaQuery().eq(Category::getParentId, id));
         if (hasChild) {
             throw new BusinessException(ResultCode.BUSINESS_ERROR, "存在子分类，不能删除");
+        }
+        if (supplierProductService.existsByCategoryId(id)) {
+            throw new BusinessException(ResultCode.BUSINESS_ERROR, "该分类已被供应商产品引用，不能删除");
         }
         removeById(id);
     }

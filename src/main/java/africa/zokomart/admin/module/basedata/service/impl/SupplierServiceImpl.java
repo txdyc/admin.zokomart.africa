@@ -8,16 +8,21 @@ import africa.zokomart.admin.module.basedata.entity.Supplier;
 import africa.zokomart.admin.module.basedata.mapper.SupplierMapper;
 import africa.zokomart.admin.module.basedata.service.SupplierService;
 import africa.zokomart.admin.module.basedata.vo.SupplierVO;
+import africa.zokomart.admin.module.supplierproduct.service.SupplierProductService;
 import com.baomidou.mybatisplus.core.metadata.IPage;
 import com.baomidou.mybatisplus.core.toolkit.Wrappers;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
+import lombok.RequiredArgsConstructor;
 import org.springframework.beans.BeanUtils;
 import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
 
 @Service
+@RequiredArgsConstructor
 public class SupplierServiceImpl extends ServiceImpl<SupplierMapper, Supplier> implements SupplierService {
+
+    private final SupplierProductService supplierProductService;
 
     @Override
     public Long createSupplier(SupplierSaveDTO dto) {
@@ -48,7 +53,9 @@ public class SupplierServiceImpl extends ServiceImpl<SupplierMapper, Supplier> i
 
     @Override
     public void deleteSupplier(Long id) {
-        // 被供应商产品引用的校验在 Phase 4 回填
+        if (supplierProductService.existsBySupplierId(id)) {
+            throw new BusinessException(ResultCode.BUSINESS_ERROR, "该供应商已有产品，不能删除");
+        }
         removeById(id);
     }
 
