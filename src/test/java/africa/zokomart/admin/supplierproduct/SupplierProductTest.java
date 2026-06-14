@@ -75,9 +75,9 @@ class SupplierProductTest {
 
         // 供应商已有产品涉及的品牌/分类
         mvc.perform(get("/api/suppliers/" + supplierId + "/brands").header("Authorization", t))
-                .andExpect(jsonPath("$.data[0].id").value(brandId));
+                .andExpect(jsonPath("$.data[0].id").value(String.valueOf(brandId)));
         mvc.perform(get("/api/suppliers/" + supplierId + "/categories").header("Authorization", t))
-                .andExpect(jsonPath("$.data[0].id").value(categoryId));
+                .andExpect(jsonPath("$.data[0].id").value(String.valueOf(categoryId)));
 
         // (supplier, product_code) 唯一：重复编码报错
         mvc.perform(post("/api/supplier-products").header("Authorization", t)

@@ -61,7 +61,7 @@ class InventoryStockApiTest {
         mvc.perform(get("/api/inventory/stocks").header("Authorization", t)
                         .param("supplierId", String.valueOf(supplierId)))
                 .andExpect(jsonPath("$.code").value(0))
-                .andExpect(jsonPath("$.data.records[0].supplierProductId").value(spId))
+                .andExpect(jsonPath("$.data.records[0].supplierProductId").value(String.valueOf(spId)))
                 .andExpect(jsonPath("$.data.records[0].quantity").value(12))
                 .andExpect(jsonPath("$.data.records[0].supplierName").value(supName));
 
