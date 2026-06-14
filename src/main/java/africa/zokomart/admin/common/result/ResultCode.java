@@ -24,7 +24,11 @@ public enum ResultCode {
     // 文件上传
     FILE_EMPTY(40004, "上传文件为空"),
     FILE_TYPE_NOT_ALLOWED(40005, "不支持的文件类型"),
-    FILE_TOO_LARGE(40006, "文件超过大小限制");
+    FILE_TOO_LARGE(40006, "文件超过大小限制"),
+
+    // 供应商-品牌授权
+    BRAND_NOT_AUTHORIZED(40007, "该品牌未对此供应商授权"),
+    BRAND_IN_USE(40008, "该品牌下已有供应商产品，无法取消授权");
 
     private final int code;
     private final String msg;
