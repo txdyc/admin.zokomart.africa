@@ -1,5 +1,5 @@
 server:
-  port: 8080
+  port: 8081
   servlet:
     context-path: /
 
@@ -13,6 +13,10 @@ spring:
     enabled: true
     locations: classpath:db/migration
     baseline-on-migrate: true
+  servlet:
+    multipart:
+      max-file-size: 5MB
+      max-request-size: 5MB
 
 mybatis-plus:
   configuration:
@@ -30,3 +34,10 @@ sa-token:
   is-concurrent: true
   is-share: false
   token-style: uuid
+
+app:
+  upload:
+    dir: ${UPLOAD_DIR:./uploads}
+    url-prefix: /files
+    max-size: 2097152
+    allowed-types: png,jpg,jpeg,webp,gif

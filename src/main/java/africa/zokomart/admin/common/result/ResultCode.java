@@ -19,7 +19,12 @@ public enum ResultCode {
     // 业务域细化错误码
     INSUFFICIENT_STOCK(40001, "库存不足"),
     BELOW_MIN_PURCHASE_QTY(40002, "低于最小采购量"),
-    INVALID_STATUS_TRANSITION(40003, "非法的状态流转");
+    INVALID_STATUS_TRANSITION(40003, "非法的状态流转"),
+
+    // 文件上传
+    FILE_EMPTY(40004, "上传文件为空"),
+    FILE_TYPE_NOT_ALLOWED(40005, "不支持的文件类型"),
+    FILE_TOO_LARGE(40006, "文件超过大小限制");
 
     private final int code;
     private final String msg;

@@ -6,3 +6,6 @@ target/
 # 本地密钥 profile，严禁入库
 src/main/resources/application-local.yml
 *.log
+
+# 本地上传文件
+/uploads/
