@@ -22,6 +22,7 @@ import java.util.List;
 public class SupplierProductController {
 
     private final SupplierProductService supplierProductService;
+    private final africa.zokomart.admin.module.supplierproduct.service.SupplierProductImportService supplierProductImportService;
     private final africa.zokomart.admin.module.basedata.service.SupplierBrandService supplierBrandService;
 
     @GetMapping("/api/supplier-products")
@@ -48,6 +49,16 @@ public class SupplierProductController {
     @SaCheckPermission("supplierProduct:create")
     public Result<Long> create(@Valid @RequestBody SupplierProductSaveDTO dto) {
         return Result.ok(supplierProductService.createSupplierProduct(dto));
+    }
+
+    @PostMapping("/api/supplier-products/import")
+    @SaCheckPermission("supplierProduct:import")
+    public Result<africa.zokomart.admin.module.supplierproduct.vo.SupplierProductImportResultVO> importCsv(
+            @RequestParam("file") org.springframework.web.multipart.MultipartFile file,
+            @RequestParam("supplierId") Long supplierId,
+            @RequestParam("brandId") Long brandId,
+            @RequestParam(value = "mode", defaultValue = "skip") String mode) {
+        return Result.ok(supplierProductImportService.importCsv(supplierId, brandId, mode, file));
     }
 
     @PutMapping("/api/supplier-products/{id}")
