@@ -18,6 +18,7 @@ import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
 import lombok.RequiredArgsConstructor;
 import org.springframework.beans.BeanUtils;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
 
 import java.util.Collections;
@@ -32,6 +33,7 @@ public class SupplierProductServiceImpl extends ServiceImpl<SupplierProductMappe
     private final africa.zokomart.admin.module.basedata.service.SupplierBrandService supplierBrandService;
 
     @Override
+    @Transactional
     public Long createSupplierProduct(SupplierProductSaveDTO dto) {
         if (existsProductCode(dto.getSupplierId(), dto.getProductCode(), null)) {
             throw new BusinessException(ResultCode.BUSINESS_ERROR, "该供应商下产品编码已存在");
@@ -48,6 +50,7 @@ public class SupplierProductServiceImpl extends ServiceImpl<SupplierProductMappe
     }
 
     @Override
+    @Transactional
     public void updateSupplierProduct(SupplierProductSaveDTO dto) {
         SupplierProduct exist = getById(dto.getId());
         if (exist == null) {

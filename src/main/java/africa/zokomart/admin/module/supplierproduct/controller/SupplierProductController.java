@@ -7,12 +7,15 @@ import africa.zokomart.admin.common.result.Result;
 import africa.zokomart.admin.module.basedata.vo.BrandVO;
 import africa.zokomart.admin.module.basedata.vo.CategoryVO;
 import africa.zokomart.admin.module.supplierproduct.dto.SupplierProductSaveDTO;
+import africa.zokomart.admin.module.supplierproduct.service.SupplierProductImportService;
 import africa.zokomart.admin.module.supplierproduct.service.SupplierProductService;
+import africa.zokomart.admin.module.supplierproduct.vo.SupplierProductImportResultVO;
 import africa.zokomart.admin.module.supplierproduct.vo.SupplierProductVO;
 import cn.dev33.satoken.annotation.SaCheckPermission;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.web.multipart.MultipartFile;
 
 import java.util.List;
 
@@ -22,7 +25,7 @@ import java.util.List;
 public class SupplierProductController {
 
     private final SupplierProductService supplierProductService;
-    private final africa.zokomart.admin.module.supplierproduct.service.SupplierProductImportService supplierProductImportService;
+    private final SupplierProductImportService supplierProductImportService;
     private final africa.zokomart.admin.module.basedata.service.SupplierBrandService supplierBrandService;
 
     @GetMapping("/api/supplier-products")
@@ -53,8 +56,8 @@ public class SupplierProductController {
 
     @PostMapping("/api/supplier-products/import")
     @SaCheckPermission("supplierProduct:import")
-    public Result<africa.zokomart.admin.module.supplierproduct.vo.SupplierProductImportResultVO> importCsv(
-            @RequestParam("file") org.springframework.web.multipart.MultipartFile file,
+    public Result<SupplierProductImportResultVO> importCsv(
+            @RequestParam("file") MultipartFile file,
             @RequestParam("supplierId") Long supplierId,
             @RequestParam("brandId") Long brandId,
             @RequestParam(value = "mode", defaultValue = "skip") String mode) {
