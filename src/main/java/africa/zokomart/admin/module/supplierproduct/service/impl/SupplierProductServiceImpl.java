@@ -3,11 +3,8 @@ package africa.zokomart.admin.module.supplierproduct.service.impl;
 import africa.zokomart.admin.common.exception.BusinessException;
 import africa.zokomart.admin.common.result.PageResult;
 import africa.zokomart.admin.common.result.ResultCode;
-import africa.zokomart.admin.module.basedata.entity.Brand;
 import africa.zokomart.admin.module.basedata.entity.Category;
-import africa.zokomart.admin.module.basedata.mapper.BrandMapper;
 import africa.zokomart.admin.module.basedata.mapper.CategoryMapper;
-import africa.zokomart.admin.module.basedata.vo.BrandVO;
 import africa.zokomart.admin.module.basedata.vo.CategoryVO;
 import africa.zokomart.admin.module.supplierproduct.dto.SupplierProductSaveDTO;
 import africa.zokomart.admin.module.supplierproduct.entity.SupplierProduct;
@@ -31,13 +28,17 @@ import java.util.List;
 public class SupplierProductServiceImpl extends ServiceImpl<SupplierProductMapper, SupplierProduct>
         implements SupplierProductService {
 
-    private final BrandMapper brandMapper;
     private final CategoryMapper categoryMapper;
+    private final africa.zokomart.admin.module.basedata.service.SupplierBrandService supplierBrandService;
 
     @Override
     public Long createSupplierProduct(SupplierProductSaveDTO dto) {
         if (existsProductCode(dto.getSupplierId(), dto.getProductCode(), null)) {
             throw new BusinessException(ResultCode.BUSINESS_ERROR, "该供应商下产品编码已存在");
+        }
+        if (dto.getBrandId() != null
+                && !supplierBrandService.isAuthorized(dto.getSupplierId(), dto.getBrandId())) {
+            throw new BusinessException(ResultCode.BRAND_NOT_AUTHORIZED);
         }
         SupplierProduct sp = new SupplierProduct();
         BeanUtils.copyProperties(dto, sp, "id");
@@ -54,6 +55,10 @@ public class SupplierProductServiceImpl extends ServiceImpl<SupplierProductMappe
         }
         if (existsProductCode(dto.getSupplierId(), dto.getProductCode(), dto.getId())) {
             throw new BusinessException(ResultCode.BUSINESS_ERROR, "该供应商下产品编码已存在");
+        }
+        if (dto.getBrandId() != null
+                && !supplierBrandService.isAuthorized(dto.getSupplierId(), dto.getBrandId())) {
+            throw new BusinessException(ResultCode.BRAND_NOT_AUTHORIZED);
         }
         BeanUtils.copyProperties(dto, exist, "id");
         updateById(exist);
@@ -90,15 +95,6 @@ public class SupplierProductServiceImpl extends ServiceImpl<SupplierProductMappe
             throw new BusinessException(ResultCode.NOT_FOUND, "供应商产品不存在");
         }
         return toVO(sp);
-    }
-
-    @Override
-    public List<BrandVO> listBrandsBySupplier(Long supplierId) {
-        List<Long> brandIds = distinctRefIds(supplierId, "brand_id");
-        if (brandIds.isEmpty()) {
-            return Collections.emptyList();
-        }
-        return brandMapper.selectBatchIds(brandIds).stream().map(this::toBrandVO).toList();
     }
 
     @Override
@@ -155,12 +151,6 @@ public class SupplierProductServiceImpl extends ServiceImpl<SupplierProductMappe
     private SupplierProductVO toVO(SupplierProduct sp) {
         SupplierProductVO vo = new SupplierProductVO();
         BeanUtils.copyProperties(sp, vo);
-        return vo;
-    }
-
-    private BrandVO toBrandVO(Brand brand) {
-        BrandVO vo = new BrandVO();
-        BeanUtils.copyProperties(brand, vo);
         return vo;
     }
 

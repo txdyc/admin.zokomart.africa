@@ -23,6 +23,7 @@ import org.springframework.util.StringUtils;
 public class BrandServiceImpl extends ServiceImpl<BrandMapper, Brand> implements BrandService {
 
     private final SupplierProductService supplierProductService;
+    private final africa.zokomart.admin.module.basedata.service.SupplierBrandService supplierBrandService;
 
     @Override
     public Long createBrand(BrandSaveDTO dto) {
@@ -55,6 +56,9 @@ public class BrandServiceImpl extends ServiceImpl<BrandMapper, Brand> implements
     public void deleteBrand(Long id) {
         if (supplierProductService.existsByBrandId(id)) {
             throw new BusinessException(ResultCode.BUSINESS_ERROR, "该品牌已被供应商产品引用，不能删除");
+        }
+        if (supplierBrandService.existsByBrandId(id)) {
+            throw new BusinessException(ResultCode.BUSINESS_ERROR, "该品牌已被供应商授权引用，不能删除");
         }
         removeById(id);
     }

@@ -23,6 +23,7 @@ import org.springframework.util.StringUtils;
 public class SupplierServiceImpl extends ServiceImpl<SupplierMapper, Supplier> implements SupplierService {
 
     private final SupplierProductService supplierProductService;
+    private final africa.zokomart.admin.module.basedata.service.SupplierBrandService supplierBrandService;
 
     @Override
     public Long createSupplier(SupplierSaveDTO dto) {
@@ -56,6 +57,7 @@ public class SupplierServiceImpl extends ServiceImpl<SupplierMapper, Supplier> i
         if (supplierProductService.existsBySupplierId(id)) {
             throw new BusinessException(ResultCode.BUSINESS_ERROR, "该供应商已有产品，不能删除");
         }
+        supplierBrandService.removeBySupplier(id);
         removeById(id);
     }
 

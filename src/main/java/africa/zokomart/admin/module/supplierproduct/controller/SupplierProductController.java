@@ -22,6 +22,7 @@ import java.util.List;
 public class SupplierProductController {
 
     private final SupplierProductService supplierProductService;
+    private final africa.zokomart.admin.module.basedata.service.SupplierBrandService supplierBrandService;
 
     @GetMapping("/api/supplier-products")
     @SaCheckPermission("supplierProduct:list")
@@ -69,7 +70,7 @@ public class SupplierProductController {
     @GetMapping("/api/suppliers/{id}/brands")
     @SaCheckPermission("supplierProduct:list")
     public Result<List<BrandVO>> brandsBySupplier(@PathVariable Long id) {
-        return Result.ok(supplierProductService.listBrandsBySupplier(id));
+        return Result.ok(supplierBrandService.listAuthorizedBrands(id));
     }
 
     @GetMapping("/api/suppliers/{id}/categories")
