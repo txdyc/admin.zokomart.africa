@@ -44,6 +44,8 @@ class InventoryStockServiceTest {
     CategoryService categoryService;
     @Autowired
     SupplierProductService supplierProductService;
+    @Autowired
+    africa.zokomart.admin.module.basedata.service.SupplierBrandService supplierBrandService;
 
     private long supplierId;
     private long brandId;
@@ -79,6 +81,7 @@ class InventoryStockServiceTest {
         sp.setRetailPrice(new BigDecimal("200"));
         sp.setMinPurchaseQty(1);
         sp.setStatus(1);
+        supplierBrandService.assign(supplierId, java.util.List.of(brandId));
         return supplierProductService.createSupplierProduct(sp);
     }
 

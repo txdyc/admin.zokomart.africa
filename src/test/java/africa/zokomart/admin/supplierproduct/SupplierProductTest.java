@@ -53,6 +53,12 @@ class SupplierProductTest {
         long categoryId = postForId("/api/categories",
                 "{\"name\":\"SP_Cat_" + ts + "\",\"parentId\":0,\"sort\":1,\"status\":1}", t);
 
+        // 新约束：录产品前需先授权该供应商经营此品牌
+        mvc.perform(put("/api/suppliers/" + supplierId + "/authorized-brands").header("Authorization", t)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"brandIds\":[" + brandId + "]}"))
+                .andExpect(jsonPath("$.code").value(0));
+
         String code = "PC_" + ts;
         long spId = postForId("/api/supplier-products",
                 "{\"supplierId\":" + supplierId + ",\"name\":\"Blender_" + ts + "\",\"brandId\":" + brandId
@@ -94,12 +100,12 @@ class SupplierProductTest {
         mvc.perform(delete("/api/categories/" + categoryId).header("Authorization", t))
                 .andExpect(jsonPath("$.code").value(500));
 
-        // 清理：先删产品，引用解除后基础数据可删
+        // 清理：先删产品；删供应商会清掉其品牌授权绑定；再删品牌、分类
         mvc.perform(delete("/api/supplier-products/" + spId).header("Authorization", t))
                 .andExpect(jsonPath("$.code").value(0));
-        mvc.perform(delete("/api/brands/" + brandId).header("Authorization", t))
-                .andExpect(jsonPath("$.code").value(0));
         mvc.perform(delete("/api/suppliers/" + supplierId).header("Authorization", t))
+                .andExpect(jsonPath("$.code").value(0));
+        mvc.perform(delete("/api/brands/" + brandId).header("Authorization", t))
                 .andExpect(jsonPath("$.code").value(0));
         mvc.perform(delete("/api/categories/" + categoryId).header("Authorization", t))
                 .andExpect(jsonPath("$.code").value(0));
