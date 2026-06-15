@@ -121,6 +121,13 @@ public class SupplierProductServiceImpl extends ServiceImpl<SupplierProductMappe
         return exists(Wrappers.<SupplierProduct>lambdaQuery().eq(SupplierProduct::getCategoryId, categoryId));
     }
 
+    @Override
+    public SupplierProduct findBySupplierAndCode(Long supplierId, String productCode) {
+        return getOne(Wrappers.<SupplierProduct>lambdaQuery()
+                .eq(SupplierProduct::getSupplierId, supplierId)
+                .eq(SupplierProduct::getProductCode, productCode), false);
+    }
+
     /** 查询某供应商现有产品引用的去重外键 id（自动过滤逻辑删除行）。 */
     private List<Long> distinctRefIds(Long supplierId, String column) {
         return baseMapper.selectObjs(Wrappers.<SupplierProduct>query()
