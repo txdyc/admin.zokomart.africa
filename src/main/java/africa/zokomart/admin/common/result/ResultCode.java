@@ -28,7 +28,11 @@ public enum ResultCode {
 
     // 供应商-品牌授权
     BRAND_NOT_AUTHORIZED(40007, "该品牌未对此供应商授权"),
-    BRAND_IN_USE(40008, "该品牌下已有供应商产品，无法取消授权");
+    BRAND_IN_USE(40008, "该品牌下已有供应商产品，无法取消授权"),
+
+    // 供应商产品导入
+    IMPORT_FILE_INVALID(40009, "导入文件为空或格式无法解析"),
+    IMPORT_TOO_MANY_ROWS(40010, "导入行数超过上限（最多 1000 行）");
 
     private final int code;
     private final String msg;
