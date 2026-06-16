@@ -13,4 +13,9 @@ public interface SupplierProductImportService {
      * @param file       CSV 文件（UTF-8，中文表头）
      */
     SupplierProductImportResultVO importCsv(Long supplierId, Long brandId, String mode, MultipartFile file);
+
+    /** 导入抓取到的行（best-effort，skip/overwrite），复用与 CSV 相同的 upsert 规则。 */
+    africa.zokomart.admin.module.supplierproduct.vo.SupplierProductImportResultVO importScrapedRows(
+            Long supplierId, Long brandId, String mode,
+            java.util.List<africa.zokomart.admin.module.supplierproduct.dto.ScrapedProductRow> rows);
 }
