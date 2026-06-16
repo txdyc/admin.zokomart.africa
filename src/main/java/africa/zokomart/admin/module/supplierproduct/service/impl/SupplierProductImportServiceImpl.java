@@ -161,6 +161,17 @@ public class SupplierProductImportServiceImpl implements SupplierProductImportSe
                 return RowOutcome.SKIPPED;
             }
             dto.setId(existing.getId());
+            // 覆盖模式：导入源未提供的字段保留原值，避免被 null 覆盖
+            if (dto.getCategoryId() == null) dto.setCategoryId(existing.getCategoryId());
+            if (dto.getWholesalePrice() == null) dto.setWholesalePrice(existing.getWholesalePrice());
+            if (dto.getRetailPrice() == null) dto.setRetailPrice(existing.getRetailPrice());
+            if (dto.getMinPurchaseQty() == null) dto.setMinPurchaseQty(existing.getMinPurchaseQty());
+            if (dto.getImageUrl() == null) dto.setImageUrl(existing.getImageUrl());
+            if (dto.getRemark() == null) dto.setRemark(existing.getRemark());
+            if (dto.getSkuId() == null) dto.setSkuId(existing.getSkuId());
+            if (dto.getQtyPerBox() == null) dto.setQtyPerBox(existing.getQtyPerBox());
+            if (dto.getBoxPrice() == null) dto.setBoxPrice(existing.getBoxPrice());
+            if (dto.getStockStatus() == null) dto.setStockStatus(existing.getStockStatus());
             supplierProductService.updateSupplierProduct(dto);
             return RowOutcome.UPDATED;
         }

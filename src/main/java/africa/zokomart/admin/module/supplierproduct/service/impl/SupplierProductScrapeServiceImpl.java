@@ -15,7 +15,6 @@ import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.time.Duration;
 import java.util.List;
-import java.util.Locale;
 
 @Service
 @RequiredArgsConstructor
@@ -50,7 +49,7 @@ public class SupplierProductScrapeServiceImpl implements SupplierProductScrapeSe
             throw new BusinessException(ResultCode.SCRAPE_URL_NOT_ALLOWED);
         }
         boolean allowed = props.getAllowedHosts().stream()
-                .anyMatch(h -> h.equalsIgnoreCase(host.toLowerCase(Locale.ROOT)));
+                .anyMatch(h -> h.equalsIgnoreCase(host));
         if (!allowed) {
             throw new BusinessException(ResultCode.SCRAPE_URL_NOT_ALLOWED);
         }
