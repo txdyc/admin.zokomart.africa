@@ -6,8 +6,12 @@ import africa.zokomart.admin.common.result.PageResult;
 import africa.zokomart.admin.common.result.Result;
 import africa.zokomart.admin.module.basedata.vo.BrandVO;
 import africa.zokomart.admin.module.basedata.vo.CategoryVO;
+import africa.zokomart.admin.module.supplierproduct.dto.ImportScrapedRequest;
+import africa.zokomart.admin.module.supplierproduct.dto.ScrapeRequest;
+import africa.zokomart.admin.module.supplierproduct.dto.ScrapedProductRow;
 import africa.zokomart.admin.module.supplierproduct.dto.SupplierProductSaveDTO;
 import africa.zokomart.admin.module.supplierproduct.service.SupplierProductImportService;
+import africa.zokomart.admin.module.supplierproduct.service.SupplierProductScrapeService;
 import africa.zokomart.admin.module.supplierproduct.service.SupplierProductService;
 import africa.zokomart.admin.module.supplierproduct.vo.SupplierProductImportResultVO;
 import africa.zokomart.admin.module.supplierproduct.vo.SupplierProductVO;
@@ -26,6 +30,7 @@ public class SupplierProductController {
 
     private final SupplierProductService supplierProductService;
     private final SupplierProductImportService supplierProductImportService;
+    private final SupplierProductScrapeService supplierProductScrapeService;
     private final africa.zokomart.admin.module.basedata.service.SupplierBrandService supplierBrandService;
 
     @GetMapping("/api/supplier-products")
@@ -62,6 +67,19 @@ public class SupplierProductController {
             @RequestParam("brandId") Long brandId,
             @RequestParam(value = "mode", defaultValue = "skip") String mode) {
         return Result.ok(supplierProductImportService.importCsv(supplierId, brandId, mode, file));
+    }
+
+    @PostMapping("/api/supplier-products/scrape")
+    @SaCheckPermission("supplierProduct:import")
+    public Result<java.util.List<ScrapedProductRow>> scrape(@Valid @RequestBody ScrapeRequest req) {
+        return Result.ok(supplierProductScrapeService.scrape(req.getUrl()));
+    }
+
+    @PostMapping("/api/supplier-products/import-scraped")
+    @SaCheckPermission("supplierProduct:import")
+    public Result<SupplierProductImportResultVO> importScraped(@Valid @RequestBody ImportScrapedRequest req) {
+        return Result.ok(supplierProductImportService.importScrapedRows(
+                req.getSupplierId(), req.getBrandId(), req.getMode(), req.getRows()));
     }
 
     @PutMapping("/api/supplier-products/{id}")
