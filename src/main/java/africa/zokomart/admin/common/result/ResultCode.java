@@ -32,7 +32,12 @@ public enum ResultCode {
 
     // 供应商产品导入
     IMPORT_FILE_INVALID(40009, "导入文件为空或格式无法解析"),
-    IMPORT_TOO_MANY_ROWS(40010, "导入行数超过上限（最多 1000 行）");
+    IMPORT_TOO_MANY_ROWS(40010, "导入行数超过上限（最多 1000 行）"),
+
+    // 供应商产品 URL 抓取
+    SCRAPE_URL_NOT_ALLOWED(40011, "不允许抓取该 URL"),
+    SCRAPE_FETCH_FAILED(40012, "抓取目标页失败"),
+    SCRAPE_EMPTY(40013, "未从目标页解析到产品");
 
     private final int code;
     private final String msg;
