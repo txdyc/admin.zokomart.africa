@@ -31,4 +31,7 @@ public interface SupplierProductService extends IService<SupplierProduct> {
     boolean existsByBrandId(Long brandId);
 
     boolean existsByCategoryId(Long categoryId);
+
+    /** 按 (供应商, 产品编码) 定位现有产品；不存在返回 null（导入覆盖模式用）。 */
+    SupplierProduct findBySupplierAndCode(Long supplierId, String productCode);
 }

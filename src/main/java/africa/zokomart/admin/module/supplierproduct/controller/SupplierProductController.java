@@ -7,12 +7,15 @@ import africa.zokomart.admin.common.result.Result;
 import africa.zokomart.admin.module.basedata.vo.BrandVO;
 import africa.zokomart.admin.module.basedata.vo.CategoryVO;
 import africa.zokomart.admin.module.supplierproduct.dto.SupplierProductSaveDTO;
+import africa.zokomart.admin.module.supplierproduct.service.SupplierProductImportService;
 import africa.zokomart.admin.module.supplierproduct.service.SupplierProductService;
+import africa.zokomart.admin.module.supplierproduct.vo.SupplierProductImportResultVO;
 import africa.zokomart.admin.module.supplierproduct.vo.SupplierProductVO;
 import cn.dev33.satoken.annotation.SaCheckPermission;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.web.multipart.MultipartFile;
 
 import java.util.List;
 
@@ -22,6 +25,7 @@ import java.util.List;
 public class SupplierProductController {
 
     private final SupplierProductService supplierProductService;
+    private final SupplierProductImportService supplierProductImportService;
     private final africa.zokomart.admin.module.basedata.service.SupplierBrandService supplierBrandService;
 
     @GetMapping("/api/supplier-products")
@@ -48,6 +52,16 @@ public class SupplierProductController {
     @SaCheckPermission("supplierProduct:create")
     public Result<Long> create(@Valid @RequestBody SupplierProductSaveDTO dto) {
         return Result.ok(supplierProductService.createSupplierProduct(dto));
+    }
+
+    @PostMapping("/api/supplier-products/import")
+    @SaCheckPermission("supplierProduct:import")
+    public Result<SupplierProductImportResultVO> importCsv(
+            @RequestParam("file") MultipartFile file,
+            @RequestParam("supplierId") Long supplierId,
+            @RequestParam("brandId") Long brandId,
+            @RequestParam(value = "mode", defaultValue = "skip") String mode) {
+        return Result.ok(supplierProductImportService.importCsv(supplierId, brandId, mode, file));
     }
 
     @PutMapping("/api/supplier-products/{id}")

@@ -12,6 +12,7 @@ import org.springframework.validation.FieldError;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
+import org.springframework.web.multipart.MaxUploadSizeExceededException;
 
 /**
  * 全局异常处理。controller 不做 try/catch，异常统一在此转成 Result。
@@ -41,6 +42,11 @@ public class GlobalExceptionHandler {
     @ExceptionHandler({NotPermissionException.class, NotRoleException.class})
     public Result<Void> handleNoPerm(RuntimeException e) {
         return Result.fail(ResultCode.FORBIDDEN);
+    }
+
+    @ExceptionHandler(MaxUploadSizeExceededException.class)
+    public Result<Void> handleMaxUploadSize(MaxUploadSizeExceededException e) {
+        return Result.fail(ResultCode.FILE_TOO_LARGE);
     }
 
     @ExceptionHandler(Exception.class)
