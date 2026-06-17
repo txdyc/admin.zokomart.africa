@@ -72,10 +72,11 @@ class CustomerApiTest {
         double total = om.readTree(r.getResponse().getContentAsString()).at("/data/records/0/totalAmount").asDouble();
         org.junit.jupiter.api.Assertions.assertEquals(350.0, total, 0.001);
 
-        // keyword=Kofi 命中 phoneB 这一个客户
-        mvc.perform(get("/api/customers").header("Authorization", t).param("keyword", "Kofi"))
+        // keyword=phoneB（唯一）命中 phoneB 这一个客户；用唯一电话而非常见姓名"Kofi"，避免被其它数据干扰
+        mvc.perform(get("/api/customers").header("Authorization", t).param("keyword", phoneB))
                 .andExpect(jsonPath("$.data.total").value(1))
                 .andExpect(jsonPath("$.data.records[0].customerPhone").value(phoneB))
+                .andExpect(jsonPath("$.data.records[0].customerName").value("Kofi"))
                 .andExpect(jsonPath("$.data.records[0].orderCount").value(1));
     }
 
