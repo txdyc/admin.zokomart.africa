@@ -23,4 +23,7 @@ public class SupplierProduct extends BaseEntity {
     private Long skuId;
     private Integer status;
     private String remark;
+    private Integer qtyPerBox;
+    private BigDecimal boxPrice;
+    private String stockStatus;
 }

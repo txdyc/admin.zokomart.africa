@@ -41,3 +41,6 @@ app:
     url-prefix: /files
     max-size: 2097152
     allowed-types: png,jpg,jpeg,webp,gif
+  scrape:
+    allowed-hosts:
+      - morgan.dzncm.com

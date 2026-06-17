@@ -2,14 +2,13 @@ package africa.zokomart.admin.module.supplierproduct.service.impl;
 
 import africa.zokomart.admin.common.exception.BusinessException;
 import africa.zokomart.admin.common.result.ResultCode;
-import africa.zokomart.admin.module.basedata.entity.Brand;
 import africa.zokomart.admin.module.basedata.entity.Category;
-import africa.zokomart.admin.module.basedata.entity.Supplier;
 import africa.zokomart.admin.module.basedata.mapper.CategoryMapper;
 import africa.zokomart.admin.module.basedata.service.BrandService;
 import africa.zokomart.admin.module.basedata.service.SupplierBrandService;
 import africa.zokomart.admin.module.basedata.service.SupplierService;
 import africa.zokomart.admin.module.basedata.util.CategoryPathResolver;
+import africa.zokomart.admin.module.supplierproduct.dto.ScrapedProductRow;
 import africa.zokomart.admin.module.supplierproduct.dto.SupplierProductSaveDTO;
 import africa.zokomart.admin.module.supplierproduct.entity.SupplierProduct;
 import africa.zokomart.admin.module.supplierproduct.service.SupplierProductImportService;
@@ -55,18 +54,7 @@ public class SupplierProductImportServiceImpl implements SupplierProductImportSe
 
     @Override
     public SupplierProductImportResultVO importCsv(Long supplierId, Long brandId, String mode, MultipartFile file) {
-        // 1) 整体前置校验
-        Supplier supplier = supplierService.getById(supplierId);
-        if (supplier == null) {
-            throw new BusinessException(ResultCode.NOT_FOUND, "供应商不存在");
-        }
-        Brand brand = brandService.getById(brandId);
-        if (brand == null) {
-            throw new BusinessException(ResultCode.NOT_FOUND, "品牌不存在");
-        }
-        if (!supplierBrandService.isAuthorized(supplierId, brandId)) {
-            throw new BusinessException(ResultCode.BRAND_NOT_AUTHORIZED);
-        }
+        assertImportable(supplierId, brandId);
         boolean overwrite = "overwrite".equalsIgnoreCase(mode);
 
         List<CSVRecord> records = parse(file);
@@ -80,21 +68,8 @@ public class SupplierProductImportServiceImpl implements SupplierProductImportSe
             int line = (int) rec.getRecordNumber() + 1; // 表头为第 1 行
             String code = get(rec, H_CODE);
             try {
-                String name = get(rec, H_NAME);
-                if (name.isEmpty()) {
-                    throw new BusinessException(ResultCode.BAD_REQUEST, "产品名称为空");
-                }
-                if (code.isEmpty()) {
-                    throw new BusinessException(ResultCode.BAD_REQUEST, "产品编码为空");
-                }
-                if (!seenCodes.add(code)) {
-                    throw new BusinessException(ResultCode.BAD_REQUEST, "文件内编码重复");
-                }
-
                 SupplierProductSaveDTO dto = new SupplierProductSaveDTO();
-                dto.setSupplierId(supplierId);
-                dto.setBrandId(brandId);
-                dto.setName(name);
+                dto.setName(get(rec, H_NAME));
                 dto.setProductCode(code);
                 dto.setCategoryId(CategoryPathResolver.resolve(categories, get(rec, H_CATEGORY)));
                 dto.setWholesalePrice(parsePrice(get(rec, H_WHOLESALE), "批发价"));
@@ -102,30 +77,119 @@ public class SupplierProductImportServiceImpl implements SupplierProductImportSe
                 dto.setMinPurchaseQty(parseMoq(get(rec, H_MOQ)));
                 dto.setImageUrl(emptyToNull(get(rec, H_IMAGE)));
                 dto.setRemark(emptyToNull(get(rec, H_REMARK)));
-                dto.setStatus(1);
-
-                SupplierProduct existing = supplierProductService.findBySupplierAndCode(supplierId, code);
-                if (existing != null) {
-                    if (!overwrite) {
-                        result.setSkipped(result.getSkipped() + 1);
-                        continue;
-                    }
-                    dto.setId(existing.getId());
-                    supplierProductService.updateSupplierProduct(dto);
-                    result.setUpdated(result.getUpdated() + 1);
-                } else {
-                    supplierProductService.createSupplierProduct(dto);
-                    result.setCreated(result.getCreated() + 1);
-                }
+                applyOutcome(upsertRow(supplierId, brandId, overwrite, seenCodes, dto), result);
             } catch (BusinessException e) {
-                result.setFailed(result.getFailed() + 1);
-                result.getErrors().add(new ImportRowError(line, code, e.getMessage()));
+                recordError(result, line, code, e.getMessage());
             } catch (Exception e) {
-                result.setFailed(result.getFailed() + 1);
-                result.getErrors().add(new ImportRowError(line, code, "行处理异常: " + e.getMessage()));
+                recordError(result, line, code, "行处理异常: " + e.getMessage());
             }
         }
         return result;
+    }
+
+    @Override
+    public SupplierProductImportResultVO importScrapedRows(Long supplierId, Long brandId, String mode,
+                                                           List<ScrapedProductRow> rows) {
+        assertImportable(supplierId, brandId);
+        boolean overwrite = "overwrite".equalsIgnoreCase(mode);
+
+        SupplierProductImportResultVO result = new SupplierProductImportResultVO();
+        result.setTotal(rows == null ? 0 : rows.size());
+        if (rows == null || rows.isEmpty()) {
+            return result;
+        }
+        Set<String> seenCodes = new HashSet<>();
+        for (int i = 0; i < rows.size(); i++) {
+            ScrapedProductRow row = rows.get(i);
+            int line = i + 1; // URL 导入行号 = 预览表第 i+1 行
+            String code = row.getProductCode();
+            try {
+                SupplierProductSaveDTO dto = new SupplierProductSaveDTO();
+                dto.setName(row.getProductName());
+                dto.setProductCode(code);
+                dto.setWholesalePrice(row.getUnitPrice());
+                dto.setImageUrl(row.getImageUrl());
+                dto.setQtyPerBox(row.getQtyPerBox());
+                dto.setBoxPrice(row.getBoxPrice());
+                dto.setStockStatus(row.getStockStatus());
+                applyOutcome(upsertRow(supplierId, brandId, overwrite, seenCodes, dto), result);
+            } catch (BusinessException e) {
+                recordError(result, line, code, e.getMessage());
+            } catch (Exception e) {
+                recordError(result, line, code, "行处理异常: " + e.getMessage());
+            }
+        }
+        return result;
+    }
+
+    private enum RowOutcome { CREATED, UPDATED, SKIPPED }
+
+    private void assertImportable(Long supplierId, Long brandId) {
+        if (supplierService.getById(supplierId) == null) {
+            throw new BusinessException(ResultCode.NOT_FOUND, "供应商不存在");
+        }
+        if (brandService.getById(brandId) == null) {
+            throw new BusinessException(ResultCode.NOT_FOUND, "品牌不存在");
+        }
+        if (!supplierBrandService.isAuthorized(supplierId, brandId)) {
+            throw new BusinessException(ResultCode.BRAND_NOT_AUTHORIZED);
+        }
+    }
+
+    /** 校验必填+批次内查重，按 skip/overwrite 落库；返回结果或抛业务异常。设置 supplierId/brandId/status。 */
+    private RowOutcome upsertRow(Long supplierId, Long brandId, boolean overwrite,
+                                 Set<String> seenCodes, SupplierProductSaveDTO dto) {
+        String name = dto.getName() == null ? "" : dto.getName().trim();
+        String code = dto.getProductCode() == null ? "" : dto.getProductCode().trim();
+        if (name.isEmpty()) {
+            throw new BusinessException(ResultCode.BAD_REQUEST, "产品名称为空");
+        }
+        if (code.isEmpty()) {
+            throw new BusinessException(ResultCode.BAD_REQUEST, "产品编码为空");
+        }
+        if (!seenCodes.add(code)) {
+            throw new BusinessException(ResultCode.BAD_REQUEST, "同一批次内编码重复");
+        }
+        dto.setSupplierId(supplierId);
+        dto.setBrandId(brandId);
+        if (dto.getStatus() == null) {
+            dto.setStatus(1);
+        }
+        SupplierProduct existing = supplierProductService.findBySupplierAndCode(supplierId, code);
+        if (existing != null) {
+            if (!overwrite) {
+                return RowOutcome.SKIPPED;
+            }
+            dto.setId(existing.getId());
+            // 覆盖模式：导入源未提供的字段保留原值，避免被 null 覆盖
+            if (dto.getCategoryId() == null) dto.setCategoryId(existing.getCategoryId());
+            if (dto.getWholesalePrice() == null) dto.setWholesalePrice(existing.getWholesalePrice());
+            if (dto.getRetailPrice() == null) dto.setRetailPrice(existing.getRetailPrice());
+            if (dto.getMinPurchaseQty() == null) dto.setMinPurchaseQty(existing.getMinPurchaseQty());
+            if (dto.getImageUrl() == null) dto.setImageUrl(existing.getImageUrl());
+            if (dto.getRemark() == null) dto.setRemark(existing.getRemark());
+            if (dto.getSkuId() == null) dto.setSkuId(existing.getSkuId());
+            if (dto.getQtyPerBox() == null) dto.setQtyPerBox(existing.getQtyPerBox());
+            if (dto.getBoxPrice() == null) dto.setBoxPrice(existing.getBoxPrice());
+            if (dto.getStockStatus() == null) dto.setStockStatus(existing.getStockStatus());
+            supplierProductService.updateSupplierProduct(dto);
+            return RowOutcome.UPDATED;
+        }
+        supplierProductService.createSupplierProduct(dto);
+        return RowOutcome.CREATED;
+    }
+
+    private void applyOutcome(RowOutcome o, SupplierProductImportResultVO result) {
+        switch (o) {
+            case CREATED -> result.setCreated(result.getCreated() + 1);
+            case UPDATED -> result.setUpdated(result.getUpdated() + 1);
+            case SKIPPED -> result.setSkipped(result.getSkipped() + 1);
+        }
+    }
+
+    private void recordError(SupplierProductImportResultVO result, int line, String code, String reason) {
+        result.setFailed(result.getFailed() + 1);
+        result.getErrors().add(new ImportRowError(line, code, reason));
     }
 
     private List<CSVRecord> parse(MultipartFile file) {
