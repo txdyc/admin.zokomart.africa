@@ -17,7 +17,7 @@
         FROM (
             SELECT customer_phone,
                    COUNT(*)            AS order_count,
-                   SUM(actual_amount)  AS total_amount,
+                   COALESCE(SUM(actual_amount), 0)  AS total_amount,
                    MAX(create_time)    AS last_order_time
             FROM sales_order
             WHERE deleted = 0 AND customer_phone IS NOT NULL AND customer_phone &lt;&gt; ''
