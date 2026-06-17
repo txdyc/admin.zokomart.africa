@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="africa.zokomart.admin.module.customer.mapper.CustomerMapper">
+
+    <select id="pageCustomers" resultType="africa.zokomart.admin.module.customer.vo.CustomerVO">
+        SELECT
+            a.customer_phone AS customer_phone,
+            (SELECT s2.customer_name FROM sales_order s2
+             WHERE s2.customer_phone = a.customer_phone AND s2.deleted = 0
+             ORDER BY s2.create_time DESC, s2.id DESC LIMIT 1) AS customer_name,
+            (SELECT s2.customer_address FROM sales_order s2
+             WHERE s2.customer_phone = a.customer_phone AND s2.deleted = 0
+             ORDER BY s2.create_time DESC, s2.id DESC LIMIT 1) AS customer_address,
+            a.order_count AS order_count,
+            a.total_amount AS total_amount,
+            a.last_order_time AS last_order_time
+        FROM (
+            SELECT customer_phone,
+                   COUNT(*)            AS order_count,
+                   SUM(actual_amount)  AS total_amount,
+                   MAX(create_time)    AS last_order_time
+            FROM sales_order
+            WHERE deleted = 0 AND customer_phone IS NOT NULL AND customer_phone &lt;&gt; ''
+            <if test="kw != null and kw != ''">
+                AND (customer_name LIKE CONCAT('%', #{kw}, '%')
+                     OR customer_phone LIKE CONCAT('%', #{kw}, '%'))
+            </if>
+            GROUP BY customer_phone
+        ) a
+        ORDER BY a.last_order_time DESC
+    </select>
+</mapper>
