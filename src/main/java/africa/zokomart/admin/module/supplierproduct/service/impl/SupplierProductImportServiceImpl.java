@@ -109,7 +109,13 @@ public class SupplierProductImportServiceImpl implements SupplierProductImportSe
                 dto.setProductCode(code);
                 dto.setWholesalePrice(row.getUnitPrice());
                 dto.setImageUrl(row.getImageUrl());
-                dto.setQtyPerBox(row.getQtyPerBox());
+                Integer qtyPerBox = row.getQtyPerBox();
+                dto.setQtyPerBox(qtyPerBox);
+                // MOQ = 每箱量：每种产品的最小采购量即一箱，采购模块按 MOQ 下单。
+                // qtyPerBox 缺失或非法时回退默认（createSupplierProduct.applyDefaults 置 1）。
+                if (qtyPerBox != null && qtyPerBox >= 1) {
+                    dto.setMinPurchaseQty(qtyPerBox);
+                }
                 dto.setBoxPrice(row.getBoxPrice());
                 dto.setStockStatus(row.getStockStatus());
                 applyOutcome(upsertRow(supplierId, brandId, overwrite, seenCodes, dto), result);

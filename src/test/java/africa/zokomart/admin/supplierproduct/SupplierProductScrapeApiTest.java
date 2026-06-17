@@ -87,6 +87,8 @@ class SupplierProductScrapeApiTest {
                         .param("supplierId", String.valueOf(supplierId)).param("keyword", c1)).andReturn();
         var rec = om.readTree(pr.getResponse().getContentAsString()).at("/data/records/0");
         org.junit.jupiter.api.Assertions.assertEquals(6, rec.at("/qtyPerBox").asInt());
+        // MOQ 必须等于每箱量（最小采购量为一箱）
+        org.junit.jupiter.api.Assertions.assertEquals(6, rec.at("/minPurchaseQty").asInt());
         org.junit.jupiter.api.Assertions.assertEquals("Stock Sufficient", rec.at("/stockStatus").asText());
         org.junit.jupiter.api.Assertions.assertEquals(0, new java.math.BigDecimal("1320")
                 .compareTo(new java.math.BigDecimal(rec.at("/boxPrice").asText())));
