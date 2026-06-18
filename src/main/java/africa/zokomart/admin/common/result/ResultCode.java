@@ -37,7 +37,11 @@ public enum ResultCode {
     // 供应商产品 URL 抓取
     SCRAPE_URL_NOT_ALLOWED(40011, "不允许抓取该 URL"),
     SCRAPE_FETCH_FAILED(40012, "抓取目标页失败"),
-    SCRAPE_EMPTY(40013, "未从目标页解析到产品");
+    SCRAPE_EMPTY(40013, "未从目标页解析到产品"),
+
+    // WooCommerce 同步
+    WC_NOT_CONFIGURED(40014, "未配置 WooCommerce 站点/密钥"),
+    WC_API_ERROR(40015, "WooCommerce 接口调用失败");
 
     private final int code;
     private final String msg;

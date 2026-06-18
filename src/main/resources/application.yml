@@ -44,3 +44,8 @@ app:
   scrape:
     allowed-hosts:
       - morgan.dzncm.com
+  wc:
+    base-url: ${WC_BASE_URL:}
+    consumer-key: ${WC_CONSUMER_KEY:}
+    consumer-secret: ${WC_CONSUMER_SECRET:}
+    price-multiplier: 1.7
