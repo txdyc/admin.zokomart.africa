@@ -19,6 +19,7 @@ import java.util.List;
 
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyLong;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.*;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.*;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
@@ -61,17 +62,26 @@ class WcSyncServiceTest {
         mvc.perform(put("/api/suppliers/" + supplierId + "/authorized-brands").header("Authorization", t)
                         .contentType(MediaType.APPLICATION_JSON).content("{\"brandIds\":[" + brandId + "]}"))
                 .andExpect(jsonPath("$.code").value(0));
-        // p1: 批发价 100 -> regular 175.00, sale 150.00, 库存固定 10
+        // 真实分类：父 -> 子，产品归到子分类
+        String parentCat = "WCP_" + ts;
+        String childCat = "WCC_" + ts;
+        long pcat = postForId("/api/categories",
+                "{\"name\":\"" + parentCat + "\",\"parentId\":0,\"sort\":1,\"status\":1}", t);
+        long ccat = postForId("/api/categories",
+                "{\"name\":\"" + childCat + "\",\"parentId\":" + pcat + ",\"sort\":1,\"status\":1}", t);
+        // p1: 批发价 100 -> regular 175.00, sale 150.00, 库存固定 10；分类=子分类
         long p1 = postForId("/api/supplier-products",
                 "{\"supplierId\":" + supplierId + ",\"name\":\"P1_" + ts + "\",\"brandId\":" + brandId
-                        + ",\"productCode\":\"WCA_" + ts + "\",\"wholesalePrice\":100,\"minPurchaseQty\":1,\"status\":1}", t);
+                        + ",\"categoryId\":" + ccat + ",\"productCode\":\"WCA_" + ts + "\",\"wholesalePrice\":100,\"minPurchaseQty\":1,\"status\":1}", t);
         // p2: 即使填了零售价 200 也被忽略 -> regular 仍 175.00（1.75×批发价）
         long p2 = postForId("/api/supplier-products",
                 "{\"supplierId\":" + supplierId + ",\"name\":\"P2_" + ts + "\",\"brandId\":" + brandId
-                        + ",\"productCode\":\"WCB_" + ts + "\",\"wholesalePrice\":100,\"retailPrice\":200,\"minPurchaseQty\":1,\"status\":1}", t);
+                        + ",\"categoryId\":" + ccat + ",\"productCode\":\"WCB_" + ts + "\",\"wholesalePrice\":100,\"retailPrice\":200,\"minPurchaseQty\":1,\"status\":1}", t);
 
         when(wc.configured()).thenReturn(true);
-        when(wc.ensureCategory(any())).thenReturn(100L);
+        when(wc.ensureBrand(any())).thenReturn(500L);
+        when(wc.ensureCategory(eq(parentCat), eq(0L))).thenReturn(200L);
+        when(wc.ensureCategory(eq(childCat), eq(200L))).thenReturn(201L);
         when(wc.findProductIdBySku(any())).thenReturn(null);
         when(wc.createProduct(any())).thenReturn(9001L);
 
@@ -89,15 +99,20 @@ class WcSyncServiceTest {
         org.junit.jupiter.api.Assertions.assertEquals("150.00", a.getSalePrice());
         org.junit.jupiter.api.Assertions.assertEquals(10, a.getStockQuantity());
         org.junit.jupiter.api.Assertions.assertEquals("publish", a.getStatus());
-        org.junit.jupiter.api.Assertions.assertEquals(100L, a.getCategoryId());
+        org.junit.jupiter.api.Assertions.assertEquals(201L, a.getCategoryId());
+        org.junit.jupiter.api.Assertions.assertEquals(500L, a.getBrandWcId());
         org.junit.jupiter.api.Assertions.assertEquals("175.00", b.getRegularPrice());
         org.junit.jupiter.api.Assertions.assertEquals("150.00", b.getSalePrice());
         org.junit.jupiter.api.Assertions.assertEquals(10, b.getStockQuantity());
+        org.junit.jupiter.api.Assertions.assertEquals(201L, b.getCategoryId());
+        org.junit.jupiter.api.Assertions.assertEquals(500L, b.getBrandWcId());
 
         // 再次同步：已有记录 -> 走 update（幂等）
         reset(wc);
         when(wc.configured()).thenReturn(true);
-        when(wc.ensureCategory(any())).thenReturn(100L);
+        when(wc.ensureBrand(any())).thenReturn(500L);
+        when(wc.ensureCategory(eq(parentCat), eq(0L))).thenReturn(200L);
+        when(wc.ensureCategory(eq(childCat), eq(200L))).thenReturn(201L);
         WcSyncResultVO r2 = wcSyncService.syncSupplierBrands(supplierId, List.of(brandId));
         org.junit.jupiter.api.Assertions.assertEquals(2, r2.getUpdated());
         org.junit.jupiter.api.Assertions.assertEquals(0, r2.getCreated());
@@ -108,6 +123,8 @@ class WcSyncServiceTest {
         for (long id : new long[]{p1, p2}) {
             mvc.perform(delete("/api/supplier-products/" + id).header("Authorization", t));
         }
+        mvc.perform(delete("/api/categories/" + ccat).header("Authorization", t));
+        mvc.perform(delete("/api/categories/" + pcat).header("Authorization", t));
         mvc.perform(delete("/api/suppliers/" + supplierId).header("Authorization", t));
         mvc.perform(delete("/api/brands/" + brandId).header("Authorization", t));
     }

@@ -76,8 +76,24 @@ public class WooCommerceClientImpl implements WooCommerceClient {
     }
 
     @Override
-    public long ensureCategory(String name) {
+    public long ensureCategory(String name, long parentWcId) {
         JsonNode arr = send("GET", "/wp-json/wc/v3/products/categories?search=" + enc(name) + "&per_page=100", null);
+        if (arr.isArray()) {
+            for (JsonNode n : arr) {
+                if (name.equalsIgnoreCase(n.path("name").asText()) && n.path("parent").asLong() == parentWcId) {
+                    return n.path("id").asLong();
+                }
+            }
+        }
+        ObjectNode body = om.createObjectNode();
+        body.put("name", name);
+        body.put("parent", parentWcId);
+        return send("POST", "/wp-json/wc/v3/products/categories", body).path("id").asLong();
+    }
+
+    @Override
+    public long ensureBrand(String name) {
+        JsonNode arr = send("GET", "/wp-json/wc/v3/products/brands?search=" + enc(name) + "&per_page=100", null);
         if (arr.isArray()) {
             for (JsonNode n : arr) {
                 if (name.equalsIgnoreCase(n.path("name").asText())) {
@@ -87,7 +103,7 @@ public class WooCommerceClientImpl implements WooCommerceClient {
         }
         ObjectNode body = om.createObjectNode();
         body.put("name", name);
-        return send("POST", "/wp-json/wc/v3/products/categories", body).path("id").asLong();
+        return send("POST", "/wp-json/wc/v3/products/brands", body).path("id").asLong();
     }
 
     @Override
@@ -109,8 +125,14 @@ public class WooCommerceClientImpl implements WooCommerceClient {
         body.put("manage_stock", true);
         body.put("stock_quantity", p.getStockQuantity());
         body.put("status", p.getStatus());
-        ArrayNode cats = body.putArray("categories");
-        cats.addObject().put("id", p.getCategoryId());
+        if (p.getCategoryId() > 0) {
+            ArrayNode cats = body.putArray("categories");
+            cats.addObject().put("id", p.getCategoryId());
+        }
+        if (p.getBrandWcId() > 0) {
+            ArrayNode brands = body.putArray("brands");
+            brands.addObject().put("id", p.getBrandWcId());
+        }
         if (StringUtils.hasText(p.getImageUrl())) {
             ArrayNode imgs = body.putArray("images");
             imgs.addObject().put("src", p.getImageUrl());

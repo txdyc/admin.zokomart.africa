@@ -13,6 +13,7 @@ public class WcProduct {
     private String salePrice;
     private int stockQuantity;
     private String status;     // "publish" | "draft"
-    private long categoryId;   // WC 商品分类 id（品牌）
+    private long categoryId;   // WC 商品分类 id（产品真实分类的叶子；<=0 表示不设）
+    private long brandWcId;    // WC 品牌 id（<=0 表示不设）
     private String imageUrl;   // 可空
 }

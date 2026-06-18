@@ -3,7 +3,9 @@ package africa.zokomart.admin.module.wcsync.service.impl;
 import africa.zokomart.admin.common.exception.BusinessException;
 import africa.zokomart.admin.common.result.ResultCode;
 import africa.zokomart.admin.module.basedata.entity.Brand;
+import africa.zokomart.admin.module.basedata.entity.Category;
 import africa.zokomart.admin.module.basedata.service.BrandService;
+import africa.zokomart.admin.module.basedata.service.CategoryService;
 import africa.zokomart.admin.module.basedata.service.SupplierService;
 import africa.zokomart.admin.module.supplierproduct.entity.SupplierProduct;
 import africa.zokomart.admin.module.supplierproduct.mapper.SupplierProductMapper;
@@ -34,6 +36,7 @@ public class WcSyncServiceImpl implements WcSyncService {
     private final WcSyncProperties props;
     private final SupplierService supplierService;
     private final BrandService brandService;
+    private final CategoryService categoryService;
     private final SupplierProductMapper supplierProductMapper;
     private final WcSyncRecordMapper recordMapper;
 
@@ -52,7 +55,8 @@ public class WcSyncServiceImpl implements WcSyncService {
 
         WcSyncResultVO result = new WcSyncResultVO();
         result.setTotal(products.size());
-        Map<Long, Long> brandCategoryCache = new HashMap<>();
+        Map<Long, Long> categoryCache = new HashMap<>();
+        Map<Long, Long> brandCache = new HashMap<>();
 
         for (SupplierProduct p : products) {
             try {
@@ -66,9 +70,9 @@ public class WcSyncServiceImpl implements WcSyncService {
                     result.setSkipped(result.getSkipped() + 1); // 从未同步且停用 → 跳过
                     continue;
                 }
-                long categoryId = brandCategoryCache.computeIfAbsent(
-                        p.getBrandId(), bid -> wc.ensureCategory(brandName(bid)));
-                WcProduct wcProduct = build(p, categoryId, enabled);
+                long wcCategoryId = resolveWcCategory(p.getCategoryId(), categoryCache);
+                long wcBrandId = resolveWcBrand(p.getBrandId(), brandCache);
+                WcProduct wcProduct = build(p, wcCategoryId, wcBrandId, enabled);
 
                 String outcome;
                 if (wcId == null) {
@@ -106,7 +110,7 @@ public class WcSyncServiceImpl implements WcSyncService {
     // 固定库存：所有产品在独立站显示为有库存，库存数量默认 10。
     private static final int DEFAULT_STOCK_QUANTITY = 10;
 
-    private WcProduct build(SupplierProduct p, long categoryId, boolean enabled) {
+    private WcProduct build(SupplierProduct p, long wcCategoryId, long wcBrandId, boolean enabled) {
         BigDecimal wholesale = p.getWholesalePrice() == null ? BigDecimal.ZERO : p.getWholesalePrice();
         String regularPrice = wholesale.multiply(props.getRegularMultiplier())
                 .setScale(2, RoundingMode.HALF_UP).toPlainString();
@@ -114,7 +118,36 @@ public class WcSyncServiceImpl implements WcSyncService {
                 .setScale(2, RoundingMode.HALF_UP).toPlainString();
 
         return new WcProduct(p.getName(), p.getProductCode(), regularPrice, salePrice,
-                DEFAULT_STOCK_QUANTITY, enabled ? "publish" : "draft", categoryId, p.getImageUrl());
+                DEFAULT_STOCK_QUANTITY, enabled ? "publish" : "draft", wcCategoryId, wcBrandId, p.getImageUrl());
+    }
+
+    /** 用产品真实分类在 WC 建/查（父→子层级），返回叶子分类 WC id；无分类返回 0。 */
+    private long resolveWcCategory(Long categoryId, Map<Long, Long> cache) {
+        if (categoryId == null) {
+            return 0L;
+        }
+        return cache.computeIfAbsent(categoryId, cid -> {
+            Category c = categoryService.getById(cid);
+            if (c == null) {
+                return 0L;
+            }
+            long parentWcId = 0L;
+            if (c.getParentId() != null && c.getParentId() != 0L) {
+                Category parent = categoryService.getById(c.getParentId());
+                if (parent != null) {
+                    parentWcId = wc.ensureCategory(parent.getName(), 0L);
+                }
+            }
+            return wc.ensureCategory(c.getName(), parentWcId);
+        });
+    }
+
+    /** 用产品真实品牌在 WC 建/查原生品牌，返回品牌 WC id；无品牌返回 0。 */
+    private long resolveWcBrand(Long brandId, Map<Long, Long> cache) {
+        if (brandId == null) {
+            return 0L;
+        }
+        return cache.computeIfAbsent(brandId, bid -> wc.ensureBrand(brandName(bid)));
     }
 
     private void saveRecord(Long supplierProductId, Long wcId, String sku, String status, String error) {
