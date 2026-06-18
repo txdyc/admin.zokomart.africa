@@ -1,7 +1,5 @@
 package africa.zokomart.admin.wcsync;
 
-import africa.zokomart.admin.module.inventory.entity.InventoryStock;
-import africa.zokomart.admin.module.inventory.mapper.InventoryStockMapper;
 import africa.zokomart.admin.module.wcsync.client.WcProduct;
 import africa.zokomart.admin.module.wcsync.client.WooCommerceClient;
 import africa.zokomart.admin.module.wcsync.service.WcSyncService;
@@ -35,8 +33,6 @@ class WcSyncServiceTest {
     ObjectMapper om;
     @Autowired
     WcSyncService wcSyncService;
-    @Autowired
-    InventoryStockMapper inventoryStockMapper;
 
     @MockBean
     WooCommerceClient wc;
@@ -65,20 +61,14 @@ class WcSyncServiceTest {
         mvc.perform(put("/api/suppliers/" + supplierId + "/authorized-brands").header("Authorization", t)
                         .contentType(MediaType.APPLICATION_JSON).content("{\"brandIds\":[" + brandId + "]}"))
                 .andExpect(jsonPath("$.code").value(0));
-        // p1: 未填零售价、批发价 100 -> 期望 170.00；库存 20
+        // p1: 批发价 100 -> regular 175.00, sale 150.00, 库存固定 10
         long p1 = postForId("/api/supplier-products",
                 "{\"supplierId\":" + supplierId + ",\"name\":\"P1_" + ts + "\",\"brandId\":" + brandId
                         + ",\"productCode\":\"WCA_" + ts + "\",\"wholesalePrice\":100,\"minPurchaseQty\":1,\"status\":1}", t);
-        // p2: 已填零售价 200 -> 期望 200.00；无库存 -> 0
+        // p2: 即使填了零售价 200 也被忽略 -> regular 仍 175.00（1.75×批发价）
         long p2 = postForId("/api/supplier-products",
                 "{\"supplierId\":" + supplierId + ",\"name\":\"P2_" + ts + "\",\"brandId\":" + brandId
                         + ",\"productCode\":\"WCB_" + ts + "\",\"wholesalePrice\":100,\"retailPrice\":200,\"minPurchaseQty\":1,\"status\":1}", t);
-        InventoryStock st = new InventoryStock();
-        st.setSupplierProductId(p1);
-        st.setSupplierId(supplierId);
-        st.setBrandId(brandId);
-        st.setQuantity(20);
-        inventoryStockMapper.insert(st);
 
         when(wc.configured()).thenReturn(true);
         when(wc.ensureCategory(any())).thenReturn(100L);
@@ -95,12 +85,14 @@ class WcSyncServiceTest {
         verify(wc, times(2)).createProduct(cap.capture());
         WcProduct a = cap.getAllValues().stream().filter(x -> x.getSku().equals("WCA_" + ts)).findFirst().orElseThrow();
         WcProduct b = cap.getAllValues().stream().filter(x -> x.getSku().equals("WCB_" + ts)).findFirst().orElseThrow();
-        org.junit.jupiter.api.Assertions.assertEquals("170.00", a.getRegularPrice());
-        org.junit.jupiter.api.Assertions.assertEquals(20, a.getStockQuantity());
+        org.junit.jupiter.api.Assertions.assertEquals("175.00", a.getRegularPrice());
+        org.junit.jupiter.api.Assertions.assertEquals("150.00", a.getSalePrice());
+        org.junit.jupiter.api.Assertions.assertEquals(10, a.getStockQuantity());
         org.junit.jupiter.api.Assertions.assertEquals("publish", a.getStatus());
         org.junit.jupiter.api.Assertions.assertEquals(100L, a.getCategoryId());
-        org.junit.jupiter.api.Assertions.assertEquals("200.00", b.getRegularPrice());
-        org.junit.jupiter.api.Assertions.assertEquals(0, b.getStockQuantity());
+        org.junit.jupiter.api.Assertions.assertEquals("175.00", b.getRegularPrice());
+        org.junit.jupiter.api.Assertions.assertEquals("150.00", b.getSalePrice());
+        org.junit.jupiter.api.Assertions.assertEquals(10, b.getStockQuantity());
 
         // 再次同步：已有记录 -> 走 update（幂等）
         reset(wc);
@@ -113,7 +105,6 @@ class WcSyncServiceTest {
         verify(wc, times(2)).updateProduct(anyLong(), any());
 
         // 清理
-        inventoryStockMapper.deleteById(st.getId());
         for (long id : new long[]{p1, p2}) {
             mvc.perform(delete("/api/supplier-products/" + id).header("Authorization", t));
         }

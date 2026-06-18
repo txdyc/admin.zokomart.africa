@@ -5,8 +5,6 @@ import africa.zokomart.admin.common.result.ResultCode;
 import africa.zokomart.admin.module.basedata.entity.Brand;
 import africa.zokomart.admin.module.basedata.service.BrandService;
 import africa.zokomart.admin.module.basedata.service.SupplierService;
-import africa.zokomart.admin.module.inventory.entity.InventoryStock;
-import africa.zokomart.admin.module.inventory.mapper.InventoryStockMapper;
 import africa.zokomart.admin.module.supplierproduct.entity.SupplierProduct;
 import africa.zokomart.admin.module.supplierproduct.mapper.SupplierProductMapper;
 import africa.zokomart.admin.module.wcsync.client.WcProduct;
@@ -37,7 +35,6 @@ public class WcSyncServiceImpl implements WcSyncService {
     private final SupplierService supplierService;
     private final BrandService brandService;
     private final SupplierProductMapper supplierProductMapper;
-    private final InventoryStockMapper inventoryStockMapper;
     private final WcSyncRecordMapper recordMapper;
 
     @Override
@@ -106,22 +103,18 @@ public class WcSyncServiceImpl implements WcSyncService {
         return b.getName();
     }
 
+    // 固定库存：所有产品在独立站显示为有库存，库存数量默认 10。
+    private static final int DEFAULT_STOCK_QUANTITY = 10;
+
     private WcProduct build(SupplierProduct p, long categoryId, boolean enabled) {
-        BigDecimal price;
-        if (p.getRetailPrice() != null && p.getRetailPrice().signum() > 0) {
-            price = p.getRetailPrice();
-        } else {
-            BigDecimal wholesale = p.getWholesalePrice() == null ? BigDecimal.ZERO : p.getWholesalePrice();
-            price = wholesale.multiply(props.getPriceMultiplier());
-        }
-        price = price.setScale(2, RoundingMode.HALF_UP);
+        BigDecimal wholesale = p.getWholesalePrice() == null ? BigDecimal.ZERO : p.getWholesalePrice();
+        String regularPrice = wholesale.multiply(props.getRegularMultiplier())
+                .setScale(2, RoundingMode.HALF_UP).toPlainString();
+        String salePrice = wholesale.multiply(props.getSaleMultiplier())
+                .setScale(2, RoundingMode.HALF_UP).toPlainString();
 
-        InventoryStock stock = inventoryStockMapper.selectOne(
-                Wrappers.<InventoryStock>lambdaQuery().eq(InventoryStock::getSupplierProductId, p.getId()));
-        int qty = stock == null || stock.getQuantity() == null ? 0 : stock.getQuantity();
-
-        return new WcProduct(p.getName(), p.getProductCode(), price.toPlainString(),
-                qty, enabled ? "publish" : "draft", categoryId, p.getImageUrl());
+        return new WcProduct(p.getName(), p.getProductCode(), regularPrice, salePrice,
+                DEFAULT_STOCK_QUANTITY, enabled ? "publish" : "draft", categoryId, p.getImageUrl());
     }
 
     private void saveRecord(Long supplierProductId, Long wcId, String sku, String status, String error) {

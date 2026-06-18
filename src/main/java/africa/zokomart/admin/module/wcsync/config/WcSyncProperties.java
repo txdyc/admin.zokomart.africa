@@ -14,5 +14,8 @@ public class WcSyncProperties {
     private String baseUrl;
     private String consumerKey;
     private String consumerSecret;
-    private BigDecimal priceMultiplier = new BigDecimal("1.7");
+    /** Regular Price = 批发价 × 此倍率。 */
+    private BigDecimal regularMultiplier = new BigDecimal("1.75");
+    /** Sale Price = 批发价 × 此倍率。 */
+    private BigDecimal saleMultiplier = new BigDecimal("1.5");
 }

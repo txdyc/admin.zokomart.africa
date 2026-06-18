@@ -48,4 +48,5 @@ app:
     base-url: ${WC_BASE_URL:}
     consumer-key: ${WC_CONSUMER_KEY:}
     consumer-secret: ${WC_CONSUMER_SECRET:}
-    price-multiplier: 1.7
+    regular-multiplier: 1.75
+    sale-multiplier: 1.5

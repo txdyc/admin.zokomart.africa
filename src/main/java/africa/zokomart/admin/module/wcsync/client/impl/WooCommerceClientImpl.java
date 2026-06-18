@@ -105,6 +105,7 @@ public class WooCommerceClientImpl implements WooCommerceClient {
         body.put("type", "simple");
         body.put("sku", p.getSku());
         body.put("regular_price", p.getRegularPrice());
+        body.put("sale_price", p.getSalePrice());
         body.put("manage_stock", true);
         body.put("stock_quantity", p.getStockQuantity());
         body.put("status", p.getStatus());
