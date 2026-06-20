@@ -14,6 +14,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.*;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 
+/** Task B1：销售订单面单数据端点 GET /api/sales-orders/labels（字段、当天过滤、本人范围）。 */
 @SpringBootTest
 @AutoConfigureMockMvc
 class SalesOrderLabelsApiTest {
@@ -74,10 +75,29 @@ class SalesOrderLabelsApiTest {
     @Test
     void labels_excludes_other_dates() throws Exception {
         String su = login("superadmin", "Admin@123");
+        long ts = System.nanoTime();
+
+        long supplierId = postForId("/api/suppliers", "{\"name\":\"LBLD_Sup_" + ts + "\",\"status\":1}", su);
+        long spId = postForId("/api/supplier-products",
+                "{\"supplierId\":" + supplierId + ",\"name\":\"LBLD_Prod_" + ts
+                        + "\",\"productCode\":\"LBLDC_" + ts + "\",\"wholesalePrice\":100,\"retailPrice\":200,"
+                        + "\"minPurchaseQty\":1,\"status\":1}", su);
+        mvc.perform(put("/api/inventory/stocks/" + spId).header("Authorization", su)
+                        .contentType(MediaType.APPLICATION_JSON).content("{\"quantity\":10}"))
+                .andExpect(jsonPath("$.code").value(0));
+
+        long orderId = postForId("/api/sales-orders",
+                "{\"customerName\":\"Kofi\",\"customerPhone\":\"024000\",\"customerAddress\":\"Tema\",\"items\":[{\"supplierProductId\":"
+                        + spId + ",\"qty\":1}]}", su);
+
+        // 用远期日期查询：今日新建订单不应出现
         MvcResult res = mvc.perform(get("/api/sales-orders/labels")
                         .header("Authorization", su).param("date", "2000-01-01"))
                 .andExpect(jsonPath("$.code").value(0)).andReturn();
         JsonNode data = om.readTree(res.getResponse().getContentAsString()).at("/data");
         assertThat(data.isArray()).isTrue();
+        for (JsonNode n : data) {
+            assertThat(n.get("id").asLong()).isNotEqualTo(orderId);
+        }
     }
 }

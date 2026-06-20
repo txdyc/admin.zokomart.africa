@@ -4,6 +4,7 @@ import io.swagger.v3.oas.annotations.tags.Tag;
 
 import africa.zokomart.admin.common.result.PageResult;
 import africa.zokomart.admin.common.result.Result;
+import africa.zokomart.admin.module.sales.constant.SalesConst;
 import africa.zokomart.admin.module.sales.dto.SalesOrderCreateDTO;
 import africa.zokomart.admin.module.sales.service.SalesOrderService;
 import africa.zokomart.admin.module.sales.vo.SalesOrderLabelVO;
@@ -49,7 +50,7 @@ public class SalesOrderController {
     @GetMapping("/labels")
     @SaCheckPermission("sales:order:list")
     public Result<List<SalesOrderLabelVO>> labels(
-            @RequestParam(defaultValue = "PENDING_DISPATCH") String status,
+            @RequestParam(defaultValue = SalesConst.PENDING_DISPATCH) String status,
             @RequestParam(required = false)
             @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate date) {
         Long salespersonId = StpUtil.hasPermission(PERM_VIEW_ALL) ? null : StpUtil.getLoginIdAsLong();
