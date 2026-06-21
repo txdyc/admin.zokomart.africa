@@ -41,7 +41,8 @@ public enum ResultCode {
 
     // WooCommerce 同步
     WC_NOT_CONFIGURED(40014, "未配置 WooCommerce 站点/密钥"),
-    WC_API_ERROR(40015, "WooCommerce 接口调用失败");
+    WC_API_ERROR(40015, "WooCommerce 接口调用失败"),
+    WC_SYNC_RUNNING(40016, "已有同步任务进行中，请稍后再试");
 
     private final int code;
     private final String msg;
