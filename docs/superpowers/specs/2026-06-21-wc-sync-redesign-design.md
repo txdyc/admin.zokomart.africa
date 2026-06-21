@@ -22,7 +22,7 @@
 | 执行架构 | **方案 A**：后端异步任务 + 前端轮询进度，立即返回 `jobId`，根治 15s 超时 |
 | 任务持久化 | 持久化到 **`wc_sync_job`** 表，可查历史、重启不丢 |
 | 存量重复图 | **只保证今后不再重复**，历史堆积的重复 media 先不动（不做破坏性删除） |
-| 单飞锁 | 全局一把（后台手动同步，最简最稳） |
+| 单飞锁 | **进程内 `AtomicBoolean` 全局单飞**（后端为单机单 jar 运行、无应用级 Redis 接线，故用进程内锁最简最稳；行为=任意时刻仅一个同步任务） |
 | 线程池 | 单任务串行跑（对 WC 友好、避免限流） |
 | 失败明细 | 存 `wc_sync_job.failed_items`(JSON) 列，不另建子表（量有界） |
 
@@ -72,9 +72,9 @@ ALTER TABLE wc_sync_record
 
 **`POST /api/wc-sync/supplier-brands`（语义变更：立即返回 jobId）**
 1. 校验 WC 已配置、供应商存在、品牌非空。
-2. 抢 Redis 单飞锁 `wc:sync:lock`（`SET ... NX EX <ttl>`，TTL 如 30min）。被占 → 抛业务码 `WC_SYNC_RUNNING`（"已有同步任务进行中"）。
+2. 抢进程内单飞锁 `WcSyncLock.tryAcquire()`（`AtomicBoolean.compareAndSet(false,true)`）。被占 → 抛业务码 `WC_SYNC_RUNNING`（"已有同步任务进行中"）。
 3. 统计 total，建 `wc_sync_job` 行（status=RUNNING, start_time=now）。
-4. 提交给专用线程池异步执行 `runSync(jobId, supplierId, brandIds)`。
+4. 提交给专用线程池 `@Async` 执行 `runSyncAsync(jobId, supplierId, brandIds)`（内部调同步的 `runSync`）。
 5. **立即返回 `{ jobId }`**。
 
 **`runSync`（@Async，串行循环）**
@@ -92,8 +92,10 @@ ALTER TABLE wc_sync_record
 
 ### 4.2 单飞锁
 
-- 全局一把 `wc:sync:lock`，value=jobId，`NX` 获取、`finally` 释放（删锁前校验 value 防误删）。
+- `WcSyncLock` 组件包一个 `AtomicBoolean`，`tryAcquire()`=`compareAndSet(false,true)`，`release()` 置回 false。
+- `startSync` 抢锁，`runSync` 的 `finally` 释放（即便 startSync 抢锁后 runSync 由 startSync 在 finally 释放——锁由"任务生命周期"持有：startSync 抢、异步任务结束时释放）。
 - 与"线程池单任务"叠加，确保任意时刻只有一个同步在跑，根治问题 2 的并发重试。
+- 单机单 jar 运行，进程内锁即足够；无需 Redis。重启后 JVM 全新、锁自然为 false。
 
 ### 4.3 图片幂等（问题 3 根治）
 
@@ -116,7 +118,7 @@ service 决策矩阵（以 `wc_sync_record` 状态为准）：
 ### 4.4 健壮性
 
 - **客户端重试**：`WooCommerceClientImpl.send` 对网络超时 / IOException 做 1 次重试（业务级 4xx/5xx 不重试）。connectTimeout 保持 10s，单调用读超时保持 20s。
-- **重启恢复**：`ApplicationRunner` 启动时把残留 `RUNNING`（单机重启即视为已死）批量标为 `INTERRUPTED`，并清理可能残留的锁。
+- **重启恢复**：`ApplicationRunner` 启动时把残留 `RUNNING`（单机重启即视为已死）批量标为 `INTERRUPTED`。（进程内锁随 JVM 重启自动复位，无需额外清理。）
 - 不记录 WC `consumer-secret` / token 到日志。
 
 ### 4.5 端点
@@ -131,7 +133,7 @@ service 决策矩阵（以 `wc_sync_record` 状态为准）：
 
 ### 4.6 新增/改动文件清单（后端）
 
-- 新增：`entity/WcSyncJob`、`mapper/WcSyncJobMapper`、`service/WcSyncJobService(+impl)`、`vo/WcSyncJobVO`、`client/WcUpsertResult`、`config/WcSyncAsyncConfig`(线程池+@EnableAsync)、`config/WcSyncStartupRecovery`(ApplicationRunner)、`db/migration/V14__...sql`。
+- 新增：`entity/WcSyncJob`、`mapper/WcSyncJobMapper`、`service/WcSyncJobService(+impl)`、`vo/WcSyncJobVO`、`client/WcUpsertResult`、`service/WcSyncLock`(进程内单飞锁)、`config/WcSyncAsyncConfig`(线程池+@EnableAsync)、`config/WcSyncStartupRecovery`(ApplicationRunner)、`db/migration/V14__...sql`。
 - 改动：`WcSyncServiceImpl`（任务化 + 锁 + 图片决策 + 去 skip）、`WooCommerceClientImpl`（返回 imageId、条件 images、findProductMainImageId、重试）、`WooCommerceClient` 接口、`WcProduct`（imageUrl 字段保留，images 控制上移）、`WcSyncRecord`(+2 字段)、`WcSyncController`(+2 端点，POST 改返回 jobId)、`ResultCode`(+`WC_SYNC_RUNNING`)。
 
 ## 5. 前端设计
@@ -150,7 +152,7 @@ service 决策矩阵（以 `wc_sync_record` 状态为准）：
 - 图片决策矩阵三态：源未变→不传 images；源变→传新 src 并回写 id；新建→传 src 回写 id；历史脏记录→收编现有 id 不重传。
 - 停用产品 → `draft` + drafted_count；不再产生 SKIPPED。
 - 任务计数与终态判定（全成功=SUCCESS、部分失败=PARTIAL、全失败=FAILED）。
-- 单飞锁：第二次启动在锁未释放时被拒（`WC_SYNC_RUNNING`）。
+- 单飞锁：`WcSyncLock` 连续 `tryAcquire` 两次第二次返回 false；锁被持有时 `startSync` 抛 `WC_SYNC_RUNNING`。
 - 重启恢复：启动时 RUNNING → INTERRUPTED。
 - `WooCommerceClientImpl.toJson`：omit images 时不出现 `images` 字段。
 
