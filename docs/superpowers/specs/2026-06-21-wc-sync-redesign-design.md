@@ -99,7 +99,7 @@ ALTER TABLE wc_sync_record
 
 ### 4.3 图片幂等（问题 3 根治）
 
-`WooCommerceClient` 改造：`createProduct/updateProduct` 解析返回的 `images[0].id` 一并回传 —— 新增轻量返回体 `WcUpsertResult{ long productId; Long imageId; }`。`toJson` 的 `images` 改为由 service 显式控制（传 src / 传 id / 不传）。
+`WooCommerceClient` 改造：`createProduct/updateProduct` 解析返回的 `images[0].id` 一并回传 —— 新增轻量返回体 `WcProductRef{ long productId; Long imageId; }`。`toJson` 的 `images` 改为由 service 显式控制（传 src / 传 id / 不传）。
 
 service 决策矩阵（以 `wc_sync_record` 状态为准）：
 
@@ -133,7 +133,7 @@ service 决策矩阵（以 `wc_sync_record` 状态为准）：
 
 ### 4.6 新增/改动文件清单（后端）
 
-- 新增：`entity/WcSyncJob`、`mapper/WcSyncJobMapper`、`service/WcSyncJobService(+impl)`、`vo/WcSyncJobVO`、`client/WcUpsertResult`、`service/WcSyncLock`(进程内单飞锁)、`config/WcSyncAsyncConfig`(线程池+@EnableAsync)、`config/WcSyncStartupRecovery`(ApplicationRunner)、`db/migration/V14__...sql`。
+- 新增：`entity/WcSyncJob`、`mapper/WcSyncJobMapper`、`service/WcSyncJobService(+impl)`、`vo/WcSyncJobVO`、`client/WcProductRef`、`service/WcSyncLock`(进程内单飞锁)、`config/WcSyncAsyncConfig`(线程池+@EnableAsync)、`config/WcSyncStartupRecovery`(ApplicationRunner)、`db/migration/V14__...sql`。
 - 改动：`WcSyncServiceImpl`（任务化 + 锁 + 图片决策 + 去 skip）、`WooCommerceClientImpl`（返回 imageId、条件 images、findProductMainImageId、重试）、`WooCommerceClient` 接口、`WcProduct`（imageUrl 字段保留，images 控制上移）、`WcSyncRecord`(+2 字段)、`WcSyncController`(+2 端点，POST 改返回 jobId)、`ResultCode`(+`WC_SYNC_RUNNING`)。
 
 ## 5. 前端设计
