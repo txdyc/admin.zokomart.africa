@@ -1,5 +1,7 @@
 package africa.zokomart.admin.wcsync;
 
+import africa.zokomart.admin.common.exception.BusinessException;
+import africa.zokomart.admin.common.result.ResultCode;
 import africa.zokomart.admin.module.wcsync.client.WcProduct;
 import africa.zokomart.admin.module.wcsync.client.WcProductRef;
 import africa.zokomart.admin.module.wcsync.client.WooCommerceClient;
@@ -148,10 +150,9 @@ class WcSyncServiceTest {
         when(wc.configured()).thenReturn(true);
         assertTrue(lock.tryAcquire());           // 预占锁
         try {
-            RuntimeException ex = assertThrows(RuntimeException.class,
+            BusinessException ex = assertThrows(BusinessException.class,
                     () -> wcSyncService.startSync(1L, List.of(1L)));
-            assertTrue(ex.getMessage() == null || ex.getMessage().contains("同步任务")
-                    || ex.toString().contains("WC_SYNC_RUNNING") || true); // 业务码 40016
+            assertEquals(ResultCode.WC_SYNC_RUNNING.getCode(), ex.getCode()); // 业务码 40016
         } finally {
             lock.release();
         }

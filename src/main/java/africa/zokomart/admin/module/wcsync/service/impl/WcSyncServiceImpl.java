@@ -16,6 +16,7 @@ import africa.zokomart.admin.module.wcsync.config.WcSyncProperties;
 import africa.zokomart.admin.module.wcsync.entity.WcSyncJob;
 import africa.zokomart.admin.module.wcsync.entity.WcSyncJobStatus;
 import africa.zokomart.admin.module.wcsync.entity.WcSyncRecord;
+import africa.zokomart.admin.module.wcsync.mapper.WcSyncJobMapper;
 import africa.zokomart.admin.module.wcsync.mapper.WcSyncRecordMapper;
 import africa.zokomart.admin.module.wcsync.service.WcSyncJobService;
 import africa.zokomart.admin.module.wcsync.service.WcSyncLock;
@@ -27,6 +28,7 @@ import com.baomidou.mybatisplus.core.metadata.IPage;
 import com.baomidou.mybatisplus.core.toolkit.Wrappers;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.annotation.Lazy;
 import org.springframework.stereotype.Service;
@@ -41,6 +43,7 @@ import java.util.List;
 import java.util.Map;
 
 @Service
+@Slf4j
 @RequiredArgsConstructor
 public class WcSyncServiceImpl implements WcSyncService {
 
@@ -54,6 +57,7 @@ public class WcSyncServiceImpl implements WcSyncService {
     private final CategoryService categoryService;
     private final SupplierProductMapper supplierProductMapper;
     private final WcSyncRecordMapper recordMapper;
+    private final WcSyncJobMapper jobMapper;
     private final WcSyncJobService jobService;
     private final WcSyncLock lock;
     private final ObjectMapper om;
@@ -74,6 +78,9 @@ public class WcSyncServiceImpl implements WcSyncService {
         try {
             if (supplierService.getById(supplierId) == null) {
                 throw new BusinessException(ResultCode.NOT_FOUND, "供应商不存在");
+            }
+            if (brandIds == null || brandIds.isEmpty()) {
+                throw new BusinessException(ResultCode.BAD_REQUEST, "请至少选择一个品牌");
             }
             List<SupplierProduct> products = loadProducts(supplierId, brandIds);
             String operator = currentOperator();
@@ -122,8 +129,24 @@ public class WcSyncServiceImpl implements WcSyncService {
             writeProgress(jobId, products.size(), processed, created, updated, drafted, failed, failures,
                     status, LocalDateTime.now());
         } catch (Exception fatal) {
-            writeProgress(jobId, 0, 0, 0, 0, 0, 0, List.of(),
-                    WcSyncJobStatus.FAILED, LocalDateTime.now());
+            // 致命失败：保留已落地的 total/processed/计数等诊断状态，只标记失败 + 记录原因，并打日志。
+            log.error("WC sync job {} failed fatally", jobId, fatal);
+            LocalDateTime now = LocalDateTime.now();
+            WcSyncJob existing = jobMapper.selectById(jobId);
+            if (existing != null) {
+                existing.setStatus(WcSyncJobStatus.FAILED);
+                existing.setEndTime(now);
+                existing.setFailedItems(toJson(List.of(
+                        new WcSyncRowError(null, null, fatal.getMessage()))));
+                jobService.save(existing);   // updateById：existing 各字段非空，原有计数原样保留
+            } else {
+                // 任务行读不出（极少见）→ 退化为只更新状态/结束时间的最小更新。
+                WcSyncJob minimal = new WcSyncJob();
+                minimal.setId(jobId);
+                minimal.setStatus(WcSyncJobStatus.FAILED);
+                minimal.setEndTime(now);
+                jobService.save(minimal);
+            }
         } finally {
             lock.release();
         }
@@ -282,6 +305,9 @@ public class WcSyncServiceImpl implements WcSyncService {
                                String status, LocalDateTime endTime) {
         WcSyncJob job = new WcSyncJob();
         job.setId(jobId);
+        // version 故意保持为 null：MP 默认 NOT_NULL 更新策略会忽略它，发出
+        // 普通的 UPDATE ... WHERE id=?（绕过乐观锁谓词）。本任务由单线程 executor
+        // 顺序写进度，无并发竞争，无需乐观锁。
         job.setTotal(total);
         job.setProcessed(processed);
         job.setCreatedCount(created);

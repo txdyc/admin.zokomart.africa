@@ -55,7 +55,11 @@ public class WooCommerceClientImpl implements WooCommerceClient {
         } catch (BusinessException e) {
             throw e;   // WC 返回的 4xx/5xx 已是业务异常，不重试
         } catch (Exception e) {
-            // 网络/超时异常：重试 1 次
+            // 网络/超时异常：仅对幂等方法（GET/PUT/DELETE）重试 1 次。
+            // POST 非幂等：重试可能在 WC 创建重复产品，故直接以业务异常上抛，不重试。
+            if ("POST".equalsIgnoreCase(method)) {
+                throw new BusinessException(ResultCode.WC_API_ERROR, "WC 请求异常: " + e.getMessage());
+            }
             try {
                 return sendOnce(method, path, body);
             } catch (BusinessException be) {
