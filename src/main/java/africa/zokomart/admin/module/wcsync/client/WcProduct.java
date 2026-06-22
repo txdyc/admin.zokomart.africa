@@ -15,5 +15,5 @@ public class WcProduct {
     private String status;     // "publish" | "draft"
     private long categoryId;   // WC 商品分类 id（产品真实分类的叶子；<=0 表示不设）
     private long brandWcId;    // WC 品牌 id（<=0 表示不设）
-    private String imageUrl;   // 可空
+    private String imageSrc;   // 要 sideload 的源图 URL；null = 本次不传 images 字段（WC 不动现有图）
 }

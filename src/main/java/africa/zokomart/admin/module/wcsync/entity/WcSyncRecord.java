@@ -18,4 +18,6 @@ public class WcSyncRecord {
     private String lastStatus;       // CREATED/UPDATED/DRAFTED/FAILED
     private LocalDateTime lastSyncedTime;
     private String lastError;
+    private Long wcImageId;          // WC 主图 media 附件 id
+    private String syncedImageUrl;   // 上次 sideload 的源图 URL
 }
