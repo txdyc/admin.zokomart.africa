@@ -14,6 +14,7 @@ import africa.zokomart.admin.module.sales.mapper.SalesOrderItemMapper;
 import africa.zokomart.admin.module.sales.mapper.SalesOrderMapper;
 import africa.zokomart.admin.module.sales.service.SalesOrderService;
 import africa.zokomart.admin.module.sales.vo.SalesOrderItemVO;
+import africa.zokomart.admin.module.sales.vo.SalesOrderLabelVO;
 import africa.zokomart.admin.module.sales.vo.SalesOrderVO;
 import africa.zokomart.admin.module.supplierproduct.entity.SupplierProduct;
 import africa.zokomart.admin.module.supplierproduct.mapper.SupplierProductMapper;
@@ -28,6 +29,8 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
+import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -112,6 +115,24 @@ public class SalesOrderServiceImpl extends ServiceImpl<SalesOrderMapper, SalesOr
             throw new BusinessException(ResultCode.NOT_FOUND, "销售订单不存在");
         }
         return toVO(order, true);
+    }
+
+    @Override
+    public List<SalesOrderLabelVO> labels(Long salespersonId, String status, LocalDate date) {
+        LocalDate day = date != null ? date : LocalDate.now();
+        LocalDateTime start = day.atStartOfDay();
+        LocalDateTime end = day.plusDays(1).atStartOfDay();
+        List<SalesOrder> orders = list(Wrappers.<SalesOrder>lambdaQuery()
+                .eq(salespersonId != null, SalesOrder::getSalespersonId, salespersonId)
+                .eq(status != null && !status.isBlank(), SalesOrder::getStatus, status)
+                .ge(SalesOrder::getCreateTime, start)
+                .lt(SalesOrder::getCreateTime, end)
+                .orderByAsc(SalesOrder::getCreateTime));
+        return orders.stream().map(o -> {
+            SalesOrderLabelVO vo = new SalesOrderLabelVO();
+            BeanUtils.copyProperties(o, vo);
+            return vo;
+        }).toList();
     }
 
     private SalesOrderVO toVO(SalesOrder order, boolean withItems) {
