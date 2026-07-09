@@ -135,3 +135,6 @@ dispatch-with-blank-fee → sign-with-fee → fee visible in drawer.
 ## Out of scope
 
 - Editing the fee after order completion, fee change history, freight reporting.
+- Resetting a stored fee back to "unknown" (NULL): a provided fee overwrites, an absent
+  fee keeps the value — once set, the fee can only be changed to another number
+  (including 0 = free), never cleared. Operator complaints about this are by design.
