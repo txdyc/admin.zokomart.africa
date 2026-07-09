@@ -1,6 +1,10 @@
 package africa.zokomart.admin.module.raworder.service.impl;
 
+import africa.zokomart.admin.common.exception.BusinessException;
 import africa.zokomart.admin.common.result.PageResult;
+import africa.zokomart.admin.common.result.ResultCode;
+import africa.zokomart.admin.module.raworder.constant.RawOrderStatus;
+import africa.zokomart.admin.module.raworder.dto.RawOrderUpdateDTO;
 import africa.zokomart.admin.module.raworder.entity.RawOrder;
 import africa.zokomart.admin.module.raworder.mapper.RawOrderMapper;
 import africa.zokomart.admin.module.raworder.service.RawOrderService;
@@ -44,5 +48,19 @@ public class RawOrderServiceImpl implements RawOrderService {
         RawOrderVO vo = new RawOrderVO();
         BeanUtils.copyProperties(o, vo);
         return vo;
+    }
+
+    @Override
+    public void update(Long id, RawOrderUpdateDTO dto) {
+        RawOrder existing = rawOrderMapper.selectById(id);
+        if (existing == null) {
+            throw new BusinessException(ResultCode.NOT_FOUND, "原始订单不存在");
+        }
+        if (!RawOrderStatus.ALL.contains(dto.getStatus())) {
+            throw new BusinessException(ResultCode.BAD_REQUEST, "status 非法: " + dto.getStatus());
+        }
+        // DTO 与实体同名字段全量覆盖；id/审计/version 不在 DTO 上，保持原值（乐观锁沿用查出的 version）
+        BeanUtils.copyProperties(dto, existing);
+        rawOrderMapper.updateById(existing);
     }
 }

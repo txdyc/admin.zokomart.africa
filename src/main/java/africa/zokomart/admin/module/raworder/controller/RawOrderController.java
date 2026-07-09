@@ -2,16 +2,21 @@ package africa.zokomart.admin.module.raworder.controller;
 
 import africa.zokomart.admin.common.result.PageResult;
 import africa.zokomart.admin.common.result.Result;
+import africa.zokomart.admin.module.raworder.dto.RawOrderUpdateDTO;
 import africa.zokomart.admin.module.raworder.service.RawOrderImportService;
 import africa.zokomart.admin.module.raworder.service.RawOrderService;
 import africa.zokomart.admin.module.raworder.vo.RawOrderImportResultVO;
 import africa.zokomart.admin.module.raworder.vo.RawOrderVO;
 import cn.dev33.satoken.annotation.SaCheckPermission;
 import io.swagger.v3.oas.annotations.tags.Tag;
+import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PutMapping;
+import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.multipart.MultipartFile;
@@ -43,5 +48,12 @@ public class RawOrderController {
     @SaCheckPermission("raw-order:import")
     public Result<RawOrderImportResultVO> importCsv(@RequestParam("file") MultipartFile file) {
         return Result.ok(rawOrderImportService.importCsv(file));
+    }
+
+    @PutMapping("/api/raw-orders/{id}")
+    @SaCheckPermission("raw-order:update")
+    public Result<Void> update(@PathVariable Long id, @Valid @RequestBody RawOrderUpdateDTO dto) {
+        rawOrderService.update(id, dto);
+        return Result.ok();
     }
 }
