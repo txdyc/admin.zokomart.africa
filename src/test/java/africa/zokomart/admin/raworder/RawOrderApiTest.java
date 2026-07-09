@@ -128,4 +128,78 @@ class RawOrderApiTest {
                         .header("Authorization", t))
                 .andExpect(jsonPath("$.code").value(40010)); // IMPORT_TOO_MANY_ROWS，整体拒绝不入库
     }
+
+    /** 合法更新载荷；tel 用于查询定位与清理。 */
+    private static String updateJson(String tel, String status) {
+        return """
+                {"orderDate":"2026-07-03","brand":"Nasco","price":150.50,
+                 "customerName":"Ama Updated","city":"Kumasi","address":"new addr",
+                 "telephone":"%s","productName":"TV 43","productCode":"UPD-NEW",
+                 "quantity":2,"status":"%s","cod":0.00,"freight":12.00,"balance":150.50}
+                """.formatted(tel, status);
+    }
+
+    @Test
+    void update_row_then_get_reflects_changes() throws Exception {
+        String t = token();
+        String tel = "0666" + System.currentTimeMillis();
+        String body = HEADER + "\n"
+                + "2026-07-01,Hisense,100.00,Kofi,Accra,addr," + tel + ",TV 32,UPD-A,1,PAID,100.00,10.00,0.00\n";
+        mvc.perform(multipart("/api/raw-orders/import").file(csv(body)).header("Authorization", t))
+                .andExpect(jsonPath("$.data.success").value(1));
+
+        MvcResult r = mvc.perform(get("/api/raw-orders").header("Authorization", t).param("keyword", tel))
+                .andExpect(jsonPath("$.data.total").value(1))
+                .andReturn();
+        long id = om.readTree(r.getResponse().getContentAsString()).at("/data/records/0/id").asLong();
+
+        mvc.perform(put("/api/raw-orders/" + id).header("Authorization", t)
+                        .contentType(MediaType.APPLICATION_JSON).content(updateJson(tel, "RECIPIENT_REFUSED")))
+                .andExpect(jsonPath("$.code").value(0));
+
+        mvc.perform(get("/api/raw-orders").header("Authorization", t).param("keyword", tel))
+                .andExpect(jsonPath("$.data.records[0].orderDate").value("2026-07-03"))
+                .andExpect(jsonPath("$.data.records[0].brand").value("Nasco"))
+                .andExpect(jsonPath("$.data.records[0].productCode").value("UPD-NEW"))
+                .andExpect(jsonPath("$.data.records[0].quantity").value(2))
+                .andExpect(jsonPath("$.data.records[0].status").value("RECIPIENT_REFUSED"))
+                .andExpect(jsonPath("$.data.records[0].balance").value(150.50));
+
+        rawOrderMapper.delete(new LambdaQueryWrapper<RawOrder>().eq(RawOrder::getTelephone, tel));
+    }
+
+    @Test
+    void update_rejects_bad_status_blank_field_and_unknown_id() throws Exception {
+        String t = token();
+        String tel = "0667" + System.currentTimeMillis();
+        String body = HEADER + "\n"
+                + "2026-07-01,Hisense,100.00,Kofi,Accra,addr," + tel + ",TV 32,UPD-B,1,PAID,100.00,10.00,0.00\n";
+        mvc.perform(multipart("/api/raw-orders/import").file(csv(body)).header("Authorization", t))
+                .andExpect(jsonPath("$.data.success").value(1));
+        MvcResult r = mvc.perform(get("/api/raw-orders").header("Authorization", t).param("keyword", tel)).andReturn();
+        long id = om.readTree(r.getResponse().getContentAsString()).at("/data/records/0/id").asLong();
+
+        // 非法状态 → 400
+        mvc.perform(put("/api/raw-orders/" + id).header("Authorization", t)
+                        .contentType(MediaType.APPLICATION_JSON).content(updateJson(tel, "SHIPPED")))
+                .andExpect(jsonPath("$.code").value(400));
+
+        // 空 customerName → 400（jakarta 校验）
+        mvc.perform(put("/api/raw-orders/" + id).header("Authorization", t)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(updateJson(tel, "PAID").replace("\"Ama Updated\"", "\"\"")))
+                .andExpect(jsonPath("$.code").value(400));
+
+        // 不存在 id → 404
+        mvc.perform(put("/api/raw-orders/999999999999999").header("Authorization", t)
+                        .contentType(MediaType.APPLICATION_JSON).content(updateJson(tel, "PAID")))
+                .andExpect(jsonPath("$.code").value(404));
+
+        // 失败的更新均未落库：状态仍是导入时的 PAID、姓名未变
+        mvc.perform(get("/api/raw-orders").header("Authorization", t).param("keyword", tel))
+                .andExpect(jsonPath("$.data.records[0].status").value("PAID"))
+                .andExpect(jsonPath("$.data.records[0].customerName").value("Kofi"));
+
+        rawOrderMapper.delete(new LambdaQueryWrapper<RawOrder>().eq(RawOrder::getTelephone, tel));
+    }
 }
