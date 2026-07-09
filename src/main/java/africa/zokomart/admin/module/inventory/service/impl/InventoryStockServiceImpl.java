@@ -57,11 +57,27 @@ public class InventoryStockServiceImpl extends ServiceImpl<InventoryStockMapper,
     @Override
     public PageResult<InventoryStockVO> pageStocks(Long supplierId, Long brandId, Long categoryId,
                                                    String keyword, long current, long size) {
+        // keyword 命中供应商产品的 name/product_code，取 id 集合过滤库存
+        List<Long> matchedProductIds = null;
+        if (StringUtils.hasText(keyword)) {
+            matchedProductIds = supplierProductMapper.selectList(
+                            Wrappers.<SupplierProduct>lambdaQuery()
+                                    .like(SupplierProduct::getName, keyword)
+                                    .or().like(SupplierProduct::getProductCode, keyword))
+                    .stream().map(SupplierProduct::getId).toList();
+            if (matchedProductIds.isEmpty()) {
+                Page<InventoryStockVO> empty = new Page<>(current, size, 0);
+                empty.setRecords(List.of());
+                return PageResult.of(empty);
+            }
+        }
+        final List<Long> finalMatchedIds = matchedProductIds;
         IPage<InventoryStock> page = page(new Page<>(current, size),
                 Wrappers.<InventoryStock>lambdaQuery()
                         .eq(supplierId != null, InventoryStock::getSupplierId, supplierId)
                         .eq(brandId != null, InventoryStock::getBrandId, brandId)
                         .eq(categoryId != null, InventoryStock::getCategoryId, categoryId)
+                        .in(finalMatchedIds != null, InventoryStock::getSupplierProductId, finalMatchedIds)
                         .orderByDesc(InventoryStock::getUpdateTime));
 
         List<InventoryStock> records = page.getRecords();
