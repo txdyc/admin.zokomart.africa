@@ -8,7 +8,7 @@ public interface SalesLogisticsService {
     void dispatch(Long orderId, Long logisticsProviderId, BigDecimal deliveryFee);
 
     /** 更新签收类状态（状态机校验）。REJECTED 全拒签自动回补库存并完成、实收=0。 */
-    void updateStatus(Long orderId, String targetStatus);
+    void updateStatus(Long orderId, String targetStatus, BigDecimal deliveryFee);
 
     /** 标记明细拒收量（仅 SIGNED/SIGNED_PAID）：回补库存 + 写 REJECT_RETURN 流水。 */
     void markReject(Long orderId, Long itemId, Integer rejectQty);

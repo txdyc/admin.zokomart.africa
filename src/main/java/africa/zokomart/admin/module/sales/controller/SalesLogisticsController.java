@@ -30,7 +30,7 @@ public class SalesLogisticsController {
     @PutMapping("/{id}/status")
     @SaCheckPermission("logistics:status")
     public Result<Void> updateStatus(@PathVariable Long id, @Valid @RequestBody StatusUpdateDTO dto) {
-        logisticsService.updateStatus(id, dto.getStatus());
+        logisticsService.updateStatus(id, dto.getStatus(), dto.getDeliveryFee());
         return Result.ok();
     }
 

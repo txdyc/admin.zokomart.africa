@@ -43,12 +43,16 @@ public class SalesLogisticsServiceImpl implements SalesLogisticsService {
 
     @Override
     @Transactional(rollbackFor = Exception.class)
-    public void updateStatus(Long orderId, String targetStatus) {
+    public void updateStatus(Long orderId, String targetStatus, BigDecimal deliveryFee) {
         SalesOrder order = requireOpen(orderId);
         var allowed = SalesConst.TRANSITIONS.getOrDefault(order.getStatus(), java.util.Set.of());
         if (!allowed.contains(targetStatus)) {
             throw new BusinessException(ResultCode.INVALID_STATUS_TRANSITION,
                     "非法状态流转 " + order.getStatus() + "→" + targetStatus);
+        }
+        // outcome 时补录/修正派送费；null=未提供，保留原值
+        if (deliveryFee != null) {
+            order.setDeliveryFee(deliveryFee);
         }
         if (SalesConst.REJECTED.equals(targetStatus)) {
             rejectWholeOrder(order);

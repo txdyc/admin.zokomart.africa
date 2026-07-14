@@ -119,7 +119,7 @@ class SalesFlowServiceTest {
         long spId = productWithStock(10, "200");
         Long id = salesService.create(orderDto(spId, 1));
         // PENDING_DISPATCH 直接置 SIGNED 非法
-        assertThatThrownBy(() -> logisticsService.updateStatus(id, SalesConst.SIGNED))
+        assertThatThrownBy(() -> logisticsService.updateStatus(id, SalesConst.SIGNED, null))
                 .isInstanceOf(BusinessException.class)
                 .extracting("code").isEqualTo(ResultCode.INVALID_STATUS_TRANSITION.getCode());
     }
@@ -140,7 +140,7 @@ class SalesFlowServiceTest {
         Long id = salesService.create(orderDto(spId, 3)); // stock 7
         long itemId = firstItemId(id);
         logisticsService.dispatch(id, 1L, new BigDecimal("15"));
-        logisticsService.updateStatus(id, SalesConst.SIGNED);
+        logisticsService.updateStatus(id, SalesConst.SIGNED, null);
 
         logisticsService.markReject(id, itemId, 1); // 回补 1
         assertThat(stockService.getQty(spId)).isEqualTo(8);
@@ -157,7 +157,7 @@ class SalesFlowServiceTest {
         long spId = productWithStock(10, "200");
         Long id = salesService.create(orderDto(spId, 3)); // stock 7
         logisticsService.dispatch(id, 1L, new BigDecimal("15"));
-        logisticsService.updateStatus(id, SalesConst.REJECTED);
+        logisticsService.updateStatus(id, SalesConst.REJECTED, null);
 
         assertThat(stockService.getQty(spId)).isEqualTo(10); // 全部回补
         SalesOrderVO o = salesService.getDetail(id);
@@ -171,7 +171,7 @@ class SalesFlowServiceTest {
         long spId = productWithStock(10, "200");
         Long id = salesService.create(orderDto(spId, 2));
         logisticsService.dispatch(id, 1L, new BigDecimal("15"));
-        logisticsService.updateStatus(id, SalesConst.SIGNED_PAID);
+        logisticsService.updateStatus(id, SalesConst.SIGNED_PAID, null);
         logisticsService.complete(id);
 
         assertThatThrownBy(() -> logisticsService.complete(id))
