@@ -11,6 +11,7 @@ import africa.zokomart.admin.module.sales.dto.SalesOrderCreateDTO;
 import africa.zokomart.admin.module.sales.service.SalesOrderService;
 import africa.zokomart.admin.module.sales.vo.SalesOrderLabelVO;
 import africa.zokomart.admin.module.sales.vo.SalesOrderVO;
+import africa.zokomart.admin.module.sales.vo.OrderableProductVO;
 import cn.dev33.satoken.annotation.SaCheckPermission;
 import cn.dev33.satoken.stp.StpUtil;
 import jakarta.validation.Valid;
@@ -70,5 +71,17 @@ public class SalesOrderController {
             throw new BusinessException(ResultCode.NOT_FOUND, "销售订单不存在");
         }
         return Result.ok(vo);
+    }
+
+    @GetMapping("/orderable-products")
+    @SaCheckPermission("sales:order:create")
+    public Result<PageResult<OrderableProductVO>> orderableProducts(
+            @RequestParam(required = false) Long supplierId,
+            @RequestParam(required = false) Long brandId,
+            @RequestParam(required = false) Long categoryId,
+            @RequestParam(required = false) String keyword,
+            @RequestParam(defaultValue = "1") long current,
+            @RequestParam(defaultValue = "10") long size) {
+        return Result.ok(salesOrderService.orderableProducts(supplierId, brandId, categoryId, keyword, current, size));
     }
 }

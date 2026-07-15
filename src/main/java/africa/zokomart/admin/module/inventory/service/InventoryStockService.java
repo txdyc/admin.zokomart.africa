@@ -24,4 +24,8 @@ public interface InventoryStockService extends IService<InventoryStock> {
      */
     void changeStock(Long supplierProductId, int qtyChange, String type,
                      String refType, Long refId, String refNo, String remark);
+
+    /** 同上，allowNegative=true 时允许库存为负（销售缺货欠货场景）。 */
+    void changeStock(Long supplierProductId, int qtyChange, String type,
+                     String refType, Long refId, String refNo, String remark, boolean allowNegative);
 }

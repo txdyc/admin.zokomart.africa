@@ -42,6 +42,7 @@ public class SalesOrderServiceImpl extends ServiceImpl<SalesOrderMapper, SalesOr
     private final SalesOrderItemMapper itemMapper;
     private final SupplierProductMapper supplierProductMapper;
     private final InventoryStockService stockService;
+    private final africa.zokomart.admin.module.sales.mapper.OrderableProductMapper orderableProductMapper;
 
     @Override
     @Transactional(rollbackFor = Exception.class)
@@ -53,11 +54,6 @@ public class SalesOrderServiceImpl extends ServiceImpl<SalesOrderMapper, SalesOr
                 throw new BusinessException(ResultCode.NOT_FOUND, "供应商产品不存在");
             }
             int qty = in.getQty();
-            // 预校验库存（实际扣减仍由乐观锁兜底防超卖）
-            if (stockService.getQty(sp.getId()) < qty) {
-                throw new BusinessException(ResultCode.INSUFFICIENT_STOCK,
-                        "产品[" + sp.getProductCode() + "] 库存不足");
-            }
             BigDecimal unitPrice = in.getUnitPrice() != null ? in.getUnitPrice()
                     : (sp.getRetailPrice() != null ? sp.getRetailPrice() : BigDecimal.ZERO);
             SalesOrderItem item = new SalesOrderItem();
@@ -88,10 +84,10 @@ public class SalesOrderServiceImpl extends ServiceImpl<SalesOrderMapper, SalesOr
         for (SalesOrderItem item : items) {
             item.setOrderId(order.getId());
             itemMapper.insert(item);
-            // 扣减库存 + SALES_OUT 流水（乐观锁防超卖）
+            // 扣减库存 + SALES_OUT 流水（乐观锁防超卖；allowNegative=true 允许缺货欠货）
             stockService.changeStock(item.getSupplierProductId(), -item.getQty(),
                     InventoryConst.TYPE_SALES_OUT, InventoryConst.REF_SALES_ORDER,
-                    order.getId(), order.getOrderNo(), "销售出库");
+                    order.getId(), order.getOrderNo(), "销售出库", true);
         }
         return order.getId();
     }
@@ -133,6 +129,13 @@ public class SalesOrderServiceImpl extends ServiceImpl<SalesOrderMapper, SalesOr
             BeanUtils.copyProperties(o, vo);
             return vo;
         }).toList();
+    }
+
+    @Override
+    public PageResult<africa.zokomart.admin.module.sales.vo.OrderableProductVO> orderableProducts(
+            Long supplierId, Long brandId, Long categoryId, String keyword, long current, long size) {
+        Page<africa.zokomart.admin.module.sales.vo.OrderableProductVO> page = new Page<>(current, size);
+        return PageResult.of(orderableProductMapper.pageOrderable(page, supplierId, brandId, categoryId, keyword));
     }
 
     private SalesOrderVO toVO(SalesOrder order, boolean withItems) {

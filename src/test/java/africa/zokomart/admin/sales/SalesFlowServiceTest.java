@@ -97,11 +97,14 @@ class SalesFlowServiceTest {
     }
 
     @Test
-    void create_rejects_when_stock_insufficient() {
+    void create_allows_backorder_when_stock_insufficient() {
         long spId = productWithStock(10, "200");
-        assertThatThrownBy(() -> salesService.create(orderDto(spId, 999)))
-                .isInstanceOf(BusinessException.class)
-                .extracting("code").isEqualTo(ResultCode.INSUFFICIENT_STOCK.getCode());
+        // backorder：库存不足也允许下单，库存转负
+        Long id = salesService.create(orderDto(spId, 999));
+        assertThat(stockService.getQty(spId)).isEqualTo(-989);
+        SalesOrderVO o = salesService.getDetail(id);
+        assertThat(o.getStatus()).isEqualTo(SalesConst.PENDING_DISPATCH);
+        assertThat(o.getTotalQty()).isEqualTo(999);
     }
 
     @Test
