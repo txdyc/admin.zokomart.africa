@@ -2,8 +2,10 @@ package africa.zokomart.admin.module.sales.controller;
 
 import io.swagger.v3.oas.annotations.tags.Tag;
 
+import africa.zokomart.admin.common.exception.BusinessException;
 import africa.zokomart.admin.common.result.PageResult;
 import africa.zokomart.admin.common.result.Result;
+import africa.zokomart.admin.common.result.ResultCode;
 import africa.zokomart.admin.module.sales.constant.SalesConst;
 import africa.zokomart.admin.module.sales.dto.SalesOrderCreateDTO;
 import africa.zokomart.admin.module.sales.service.SalesOrderService;
@@ -60,6 +62,13 @@ public class SalesOrderController {
     @GetMapping("/{id}")
     @SaCheckPermission("sales:order:list")
     public Result<SalesOrderVO> detail(@PathVariable Long id) {
-        return Result.ok(salesOrderService.getDetail(id));
+        SalesOrderVO vo = salesOrderService.getDetail(id);
+        // 非全局查看权限者只能看自己的订单；否则按 NOT_FOUND 处理避免 id 枚举（#隔离）
+        Long currentUserId = StpUtil.getLoginIdAsLong();
+        if (!StpUtil.hasPermission(PERM_VIEW_ALL)
+                && !currentUserId.equals(vo.getSalespersonId())) {
+            throw new BusinessException(ResultCode.NOT_FOUND, "销售订单不存在");
+        }
+        return Result.ok(vo);
     }
 }
