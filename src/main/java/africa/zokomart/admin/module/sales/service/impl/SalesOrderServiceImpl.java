@@ -42,6 +42,7 @@ public class SalesOrderServiceImpl extends ServiceImpl<SalesOrderMapper, SalesOr
     private final SalesOrderItemMapper itemMapper;
     private final SupplierProductMapper supplierProductMapper;
     private final InventoryStockService stockService;
+    private final africa.zokomart.admin.module.sales.mapper.OrderableProductMapper orderableProductMapper;
 
     @Override
     @Transactional(rollbackFor = Exception.class)
@@ -128,6 +129,13 @@ public class SalesOrderServiceImpl extends ServiceImpl<SalesOrderMapper, SalesOr
             BeanUtils.copyProperties(o, vo);
             return vo;
         }).toList();
+    }
+
+    @Override
+    public PageResult<africa.zokomart.admin.module.sales.vo.OrderableProductVO> orderableProducts(
+            Long supplierId, Long brandId, Long categoryId, String keyword, long current, long size) {
+        Page<africa.zokomart.admin.module.sales.vo.OrderableProductVO> page = new Page<>(current, size);
+        return PageResult.of(orderableProductMapper.pageOrderable(page, supplierId, brandId, categoryId, keyword));
     }
 
     private SalesOrderVO toVO(SalesOrder order, boolean withItems) {

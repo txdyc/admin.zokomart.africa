@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="africa.zokomart.admin.module.sales.mapper.OrderableProductMapper">
+
+    <select id="pageOrderable" resultType="africa.zokomart.admin.module.sales.vo.OrderableProductVO">
+        SELECT
+            sp.id                        AS supplier_product_id,
+            sp.name                      AS product_name,
+            sp.product_code              AS product_code,
+            sup.name                     AS supplier_name,
+            COALESCE(st.quantity, 0)     AS quantity,
+            sp.retail_price              AS retail_price
+        FROM supplier_product sp
+        LEFT JOIN inventory_stock st ON st.supplier_product_id = sp.id AND st.deleted = 0
+        LEFT JOIN supplier sup ON sup.id = sp.supplier_id AND sup.deleted = 0
+        WHERE sp.deleted = 0 AND sp.status = 1
+        <if test="supplierId != null">AND sp.supplier_id = #{supplierId}</if>
+        <if test="brandId != null">AND sp.brand_id = #{brandId}</if>
+        <if test="categoryId != null">AND sp.category_id = #{categoryId}</if>
+        <if test="kw != null and kw != ''">
+            AND (sp.name LIKE CONCAT('%', #{kw}, '%')
+                 OR sp.product_code LIKE CONCAT('%', #{kw}, '%'))
+        </if>
+        ORDER BY (COALESCE(st.quantity, 0) > 0) DESC, sp.name ASC, sp.id ASC
+    </select>
+</mapper>

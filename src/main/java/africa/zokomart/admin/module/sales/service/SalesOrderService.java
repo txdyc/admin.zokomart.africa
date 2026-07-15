@@ -23,4 +23,8 @@ public interface SalesOrderService extends IService<SalesOrder> {
     /** 面单数据：按 status（默认 PENDING_DISPATCH）+ 当天(date，默认今日 create_time)；
      *  salespersonId 非 null 时仅本人。 */
     List<SalesOrderLabelVO> labels(Long salespersonId, String status, LocalDate date);
+
+    /** 可下单产品分页：全部在售产品（含无库存），有货优先。 */
+    PageResult<africa.zokomart.admin.module.sales.vo.OrderableProductVO> orderableProducts(
+            Long supplierId, Long brandId, Long categoryId, String keyword, long current, long size);
 }
