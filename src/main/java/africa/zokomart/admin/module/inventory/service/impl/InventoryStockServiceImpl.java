@@ -149,6 +149,13 @@ public class InventoryStockServiceImpl extends ServiceImpl<InventoryStockMapper,
     @Transactional(rollbackFor = Exception.class)
     public void changeStock(Long supplierProductId, int qtyChange, String type,
                             String refType, Long refId, String refNo, String remark) {
+        changeStock(supplierProductId, qtyChange, type, refType, refId, refNo, remark, false);
+    }
+
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public void changeStock(Long supplierProductId, int qtyChange, String type,
+                            String refType, Long refId, String refNo, String remark, boolean allowNegative) {
         for (int attempt = 0; attempt < MAX_RETRY; attempt++) {
             InventoryStock stock = findStock(supplierProductId);
             int before;
@@ -157,14 +164,14 @@ public class InventoryStockServiceImpl extends ServiceImpl<InventoryStockMapper,
             if (stock == null) {
                 before = 0;
                 after = qtyChange;
-                if (after < 0) {
+                if (after < 0 && !allowNegative) {
                     throw new BusinessException(ResultCode.INSUFFICIENT_STOCK, "库存不足");
                 }
                 ok = createStock(supplierProductId, after);
             } else {
                 before = stock.getQuantity();
                 after = before + qtyChange;
-                if (after < 0) {
+                if (after < 0 && !allowNegative) {
                     throw new BusinessException(ResultCode.INSUFFICIENT_STOCK, "库存不足");
                 }
                 stock.setQuantity(after);
