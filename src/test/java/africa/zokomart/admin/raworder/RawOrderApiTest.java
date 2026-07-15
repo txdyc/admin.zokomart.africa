@@ -98,6 +98,26 @@ class RawOrderApiTest {
     }
 
     @Test
+    void import_blank_status_freight_balance_use_defaults() throws Exception {
+        String t = token();
+        String tel = "0777" + System.currentTimeMillis();
+        // status / freight / balance 三列留空 → status 默认 NOT_DISPATCHED，freight/balance 默认 0.00
+        String body = HEADER + "\n"
+                + "2026-07-01,Hisense,100.00,Kofi,Accra,addr," + tel + ",TV 32,RAW-DEF,1,,100.00,,\n";
+        mvc.perform(multipart("/api/raw-orders/import").file(csv(body)).header("Authorization", t))
+                .andExpect(jsonPath("$.data.total").value(1))
+                .andExpect(jsonPath("$.data.success").value(1))
+                .andExpect(jsonPath("$.data.failed").value(0));
+
+        mvc.perform(get("/api/raw-orders").header("Authorization", t).param("keyword", tel))
+                .andExpect(jsonPath("$.data.records[0].status").value("NOT_DISPATCHED"))
+                .andExpect(jsonPath("$.data.records[0].freight").value(0.00))
+                .andExpect(jsonPath("$.data.records[0].balance").value(0.00));
+
+        rawOrderMapper.delete(new LambdaQueryWrapper<RawOrder>().eq(RawOrder::getTelephone, tel));
+    }
+
+    @Test
     void import_rejects_missing_header_column() throws Exception {
         String t = token();
         // 缺 balance 列 → 整文件拒绝 40009
@@ -164,6 +184,36 @@ class RawOrderApiTest {
                 .andExpect(jsonPath("$.data.records[0].quantity").value(2))
                 .andExpect(jsonPath("$.data.records[0].status").value("RECIPIENT_REFUSED"))
                 .andExpect(jsonPath("$.data.records[0].balance").value(150.50));
+
+        rawOrderMapper.delete(new LambdaQueryWrapper<RawOrder>().eq(RawOrder::getTelephone, tel));
+    }
+
+    @Test
+    void update_blank_status_freight_balance_use_defaults() throws Exception {
+        String t = token();
+        String tel = "0668" + System.currentTimeMillis();
+        String body = HEADER + "\n"
+                + "2026-07-01,Hisense,100.00,Kofi,Accra,addr," + tel + ",TV 32,UPD-C,1,PAID,100.00,10.00,50.00\n";
+        mvc.perform(multipart("/api/raw-orders/import").file(csv(body)).header("Authorization", t))
+                .andExpect(jsonPath("$.data.success").value(1));
+        MvcResult r = mvc.perform(get("/api/raw-orders").header("Authorization", t).param("keyword", tel)).andReturn();
+        long id = om.readTree(r.getResponse().getContentAsString()).at("/data/records/0/id").asLong();
+
+        // status/freight/balance 三字段省略 → 回落默认（NOT_DISPATCHED / 0.00 / 0.00）
+        String payload = """
+                {"orderDate":"2026-07-03","brand":"Nasco","price":150.50,
+                 "customerName":"Ama Updated","city":"Kumasi","address":"new addr",
+                 "telephone":"%s","productName":"TV 43","productCode":"UPD-NEW",
+                 "quantity":2,"cod":0.00}
+                """.formatted(tel);
+        mvc.perform(put("/api/raw-orders/" + id).header("Authorization", t)
+                        .contentType(MediaType.APPLICATION_JSON).content(payload))
+                .andExpect(jsonPath("$.code").value(0));
+
+        mvc.perform(get("/api/raw-orders").header("Authorization", t).param("keyword", tel))
+                .andExpect(jsonPath("$.data.records[0].status").value("NOT_DISPATCHED"))
+                .andExpect(jsonPath("$.data.records[0].freight").value(0.00))
+                .andExpect(jsonPath("$.data.records[0].balance").value(0.00));
 
         rawOrderMapper.delete(new LambdaQueryWrapper<RawOrder>().eq(RawOrder::getTelephone, tel));
     }

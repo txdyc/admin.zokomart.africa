@@ -77,10 +77,10 @@ public class RawOrderImportServiceImpl implements RawOrderImportService {
         o.setProductName(require(rec, "product_name"));
         o.setProductCode(require(rec, "product_code"));
         o.setQuantity(parseQuantity(require(rec, "quantity")));
-        o.setStatus(parseStatus(require(rec, "status")));
+        o.setStatus(parseStatusOrDefault(get(rec, "status")));
         o.setCod(parseAmount(require(rec, "cod"), "cod"));
-        o.setFreight(parseAmount(require(rec, "freight"), "freight"));
-        o.setBalance(parseAmount(require(rec, "balance"), "balance"));
+        o.setFreight(parseAmountOrZero(get(rec, "freight"), "freight"));
+        o.setBalance(parseAmountOrZero(get(rec, "balance"), "balance"));
         return o;
     }
 
@@ -141,6 +141,14 @@ public class RawOrderImportServiceImpl implements RawOrderImportService {
         }
     }
 
+    /** 金额列可留空：空则默认 0.00；非空按 parseAmount 规则校验（非负数字）。 */
+    private static BigDecimal parseAmountOrZero(String s, String label) {
+        if (s.isEmpty()) {
+            return new BigDecimal("0.00");
+        }
+        return parseAmount(s, label);
+    }
+
     private static BigDecimal parseAmount(String s, String label) {
         BigDecimal v;
         try {
@@ -167,7 +175,11 @@ public class RawOrderImportServiceImpl implements RawOrderImportService {
         return v;
     }
 
-    private static String parseStatus(String s) {
+    /** status 列可留空：空则默认 NOT_DISPATCHED；非空须为 RawOrderStatus.ALL 之一。 */
+    private static String parseStatusOrDefault(String s) {
+        if (s.isEmpty()) {
+            return RawOrderStatus.DEFAULT;
+        }
         if (!RawOrderStatus.ALL.contains(s)) {
             throw new BusinessException(ResultCode.BAD_REQUEST, "status 非法: " + s);
         }

@@ -10,7 +10,7 @@ import lombok.Data;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 
-/** 原始订单行编辑入参：14 个业务字段全量必填，规则与 CSV 导入一致。 */
+/** 原始订单行编辑入参：规则与 CSV 导入一致；status/freight/balance 可空并回落默认值。 */
 @Data
 public class RawOrderUpdateDTO {
 
@@ -53,18 +53,18 @@ public class RawOrderUpdateDTO {
     @Min(1)
     private Integer quantity;
 
-    @NotBlank
+    /** 可空：留空按导入约定回落默认状态 NOT_DISPATCHED；非空须为合法状态。 */
     private String status;
 
     @NotNull
     @DecimalMin("0")
     private BigDecimal cod;
 
-    @NotNull
+    /** 可空：留空默认 0.00；非空须非负。 */
     @DecimalMin("0")
     private BigDecimal freight;
 
-    @NotNull
+    /** 可空：留空默认 0.00；非空须非负。 */
     @DecimalMin("0")
     private BigDecimal balance;
 }

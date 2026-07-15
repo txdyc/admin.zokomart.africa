@@ -17,6 +17,7 @@ import org.springframework.beans.BeanUtils;
 import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
 
+import java.math.BigDecimal;
 import java.time.LocalDate;
 
 @Service
@@ -56,8 +57,17 @@ public class RawOrderServiceImpl implements RawOrderService {
         if (existing == null) {
             throw new BusinessException(ResultCode.NOT_FOUND, "原始订单不存在");
         }
-        if (!RawOrderStatus.ALL.contains(dto.getStatus())) {
+        // status/freight/balance 可空：与 CSV 导入一致，空则回落默认值
+        if (!StringUtils.hasText(dto.getStatus())) {
+            dto.setStatus(RawOrderStatus.DEFAULT);
+        } else if (!RawOrderStatus.ALL.contains(dto.getStatus())) {
             throw new BusinessException(ResultCode.BAD_REQUEST, "status 非法: " + dto.getStatus());
+        }
+        if (dto.getFreight() == null) {
+            dto.setFreight(new BigDecimal("0.00"));
+        }
+        if (dto.getBalance() == null) {
+            dto.setBalance(new BigDecimal("0.00"));
         }
         // DTO 与实体同名字段全量覆盖；id/审计/version 不在 DTO 上，保持原值（乐观锁沿用查出的 version）
         BeanUtils.copyProperties(dto, existing);
