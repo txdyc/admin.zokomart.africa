@@ -10,6 +10,7 @@ public class AdAiModelVO {
     /** 脱敏：**** + 尾 4 位。 */
     private String apiKeyMasked;
     private String modelCode;
+    private String apiFormat;
     private Integer enabled;
     private Integer sort;
     private String remark;

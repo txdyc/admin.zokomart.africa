@@ -13,6 +13,8 @@ public class AdAiModel extends BaseEntity {
     private String baseUrl;
     private String apiKey;
     private String modelCode;
+    /** 接口形态：CHAT=chat/completions 多模态；IMAGE=images generations/edits。 */
+    private String apiFormat;
     private Integer enabled;
     private Integer sort;
     private String remark;

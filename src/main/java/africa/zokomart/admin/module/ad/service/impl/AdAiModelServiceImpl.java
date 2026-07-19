@@ -50,6 +50,7 @@ public class AdAiModelServiceImpl implements AdAiModelService {
         AdAiModel m = new AdAiModel();
         BeanUtils.copyProperties(dto, m, "id");
         if (m.getEnabled() == null) m.setEnabled(1);
+        if (!StringUtils.hasText(m.getApiFormat())) m.setApiFormat("CHAT");
         if (m.getSort() == null) m.setSort(0);
         mapper.insert(m);
         return m.getId();

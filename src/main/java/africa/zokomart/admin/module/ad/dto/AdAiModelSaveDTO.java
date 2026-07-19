@@ -14,6 +14,8 @@ public class AdAiModelSaveDTO {
     private String apiKey;
     @NotBlank(message = "模型标识不能为空")
     private String modelCode;
+    /** CHAT / IMAGE，空则后端落默认 CHAT。 */
+    private String apiFormat;
     private Integer enabled;
     private Integer sort;
     private String remark;
