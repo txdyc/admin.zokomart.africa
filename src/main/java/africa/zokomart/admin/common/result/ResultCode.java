@@ -42,7 +42,12 @@ public enum ResultCode {
     // WooCommerce 同步
     WC_NOT_CONFIGURED(40014, "未配置 WooCommerce 站点/密钥"),
     WC_API_ERROR(40015, "WooCommerce 接口调用失败"),
-    WC_SYNC_RUNNING(40016, "已有同步任务进行中，请稍后再试");
+    WC_SYNC_RUNNING(40016, "已有同步任务进行中，请稍后再试"),
+
+    // 广告管理 / AI 生图
+    AD_MODEL_DISABLED(40017, "模型不存在或已停用"),
+    AD_GENERATE_FAILED(40018, "AI 生图失败"),
+    AD_INVALID_TEMP_URL(40019, "非法的图片路径");
 
     private final int code;
     private final String msg;

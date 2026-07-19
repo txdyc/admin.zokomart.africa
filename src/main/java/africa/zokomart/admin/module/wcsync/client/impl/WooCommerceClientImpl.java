@@ -2,7 +2,9 @@ package africa.zokomart.admin.module.wcsync.client.impl;
 
 import africa.zokomart.admin.common.exception.BusinessException;
 import africa.zokomart.admin.common.result.ResultCode;
+import africa.zokomart.admin.module.wcsync.client.WcImage;
 import africa.zokomart.admin.module.wcsync.client.WcProduct;
+import africa.zokomart.admin.module.wcsync.client.WcProductDetail;
 import africa.zokomart.admin.module.wcsync.client.WcProductRef;
 import africa.zokomart.admin.module.wcsync.client.WooCommerceClient;
 import africa.zokomart.admin.module.wcsync.config.WcSyncProperties;
@@ -21,7 +23,9 @@ import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
+import java.util.ArrayList;
 import java.util.Base64;
+import java.util.List;
 
 @Component
 @RequiredArgsConstructor
@@ -149,8 +153,16 @@ public class WooCommerceClientImpl implements WooCommerceClient {
             ArrayNode brands = body.putArray("brands");
             brands.addObject().put("id", p.getBrandWcId());
         }
-        // 仅当 imageSrc 非空才传 images（用 src 上传一次）；为 null 则不传，WC 保留现有图、不重复 sideload。
-        if (StringUtils.hasText(p.getImageSrc())) {
+        // imagesOverride 非 null = 本次完整指定 images 列表（含主图；广告图场景）；
+        // 否则退回旧 imageSrc 语义：仅在 src 非空时传，WC 保留现有图、不重复 sideload。
+        if (p.getImagesOverride() != null) {
+            ArrayNode imgs = body.putArray("images");
+            for (WcImage wi : p.getImagesOverride()) {
+                ObjectNode o = imgs.addObject();
+                if (wi.id() != null) o.put("id", wi.id());
+                else o.put("src", wi.src());
+            }
+        } else if (StringUtils.hasText(p.getImageSrc())) {
             ArrayNode imgs = body.putArray("images");
             imgs.addObject().put("src", p.getImageSrc());
         }
@@ -160,9 +172,16 @@ public class WooCommerceClientImpl implements WooCommerceClient {
     private WcProductRef parseRef(JsonNode resp) {
         long id = resp.path("id").asLong();
         JsonNode imgs = resp.path("images");
-        Long imageId = (imgs.isArray() && imgs.size() > 0 && imgs.get(0).hasNonNull("id"))
-                ? imgs.get(0).path("id").asLong() : null;
-        return new WcProductRef(id, imageId);
+        Long imageId = null;
+        List<WcImage> all = new ArrayList<>();
+        if (imgs.isArray()) {
+            for (JsonNode n : imgs) {
+                Long mid = n.hasNonNull("id") ? n.path("id").asLong() : null;
+                all.add(new WcImage(mid, n.path("src").asText(null)));
+            }
+            if (!all.isEmpty()) imageId = all.get(0).id();
+        }
+        return new WcProductRef(id, imageId, all);
     }
 
     @Override
@@ -181,5 +200,27 @@ public class WooCommerceClientImpl implements WooCommerceClient {
         JsonNode imgs = resp.path("images");
         return (imgs.isArray() && imgs.size() > 0 && imgs.get(0).hasNonNull("id"))
                 ? imgs.get(0).path("id").asLong() : null;
+    }
+
+    @Override
+    public WcProductDetail getProduct(long wcProductId) {
+        JsonNode resp = send("GET", "/wp-json/wc/v3/products/" + wcProductId, null);
+        List<WcImage> images = new ArrayList<>();
+        JsonNode imgs = resp.path("images");
+        if (imgs.isArray()) {
+            for (JsonNode n : imgs) {
+                images.add(new WcImage(n.hasNonNull("id") ? n.path("id").asLong() : null,
+                        n.path("src").asText(null)));
+            }
+        }
+        return new WcProductDetail(resp.path("id").asLong(),
+                resp.path("description").asText(""), images);
+    }
+
+    @Override
+    public void updateProductDescription(long wcProductId, String description) {
+        ObjectNode body = om.createObjectNode();
+        body.put("description", description);
+        send("PUT", "/wp-json/wc/v3/products/" + wcProductId, body);
     }
 }
