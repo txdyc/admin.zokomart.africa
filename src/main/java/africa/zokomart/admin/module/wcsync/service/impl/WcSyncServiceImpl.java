@@ -2,6 +2,8 @@ package africa.zokomart.admin.module.wcsync.service.impl;
 
 import africa.zokomart.admin.common.exception.BusinessException;
 import africa.zokomart.admin.common.result.ResultCode;
+import africa.zokomart.admin.module.ad.entity.AdProductImage;
+import africa.zokomart.admin.module.ad.mapper.AdProductImageMapper;
 import africa.zokomart.admin.module.basedata.entity.Brand;
 import africa.zokomart.admin.module.basedata.entity.Category;
 import africa.zokomart.admin.module.basedata.service.BrandService;
@@ -9,9 +11,12 @@ import africa.zokomart.admin.module.basedata.service.CategoryService;
 import africa.zokomart.admin.module.basedata.service.SupplierService;
 import africa.zokomart.admin.module.supplierproduct.entity.SupplierProduct;
 import africa.zokomart.admin.module.supplierproduct.mapper.SupplierProductMapper;
+import africa.zokomart.admin.module.wcsync.client.WcImage;
 import africa.zokomart.admin.module.wcsync.client.WcProduct;
+import africa.zokomart.admin.module.wcsync.client.WcProductDetail;
 import africa.zokomart.admin.module.wcsync.client.WcProductRef;
 import africa.zokomart.admin.module.wcsync.client.WooCommerceClient;
+import africa.zokomart.admin.module.wcsync.support.AdDescriptionBlock;
 import africa.zokomart.admin.module.wcsync.config.WcSyncProperties;
 import africa.zokomart.admin.module.wcsync.entity.WcSyncJob;
 import africa.zokomart.admin.module.wcsync.entity.WcSyncJobStatus;
@@ -61,6 +66,7 @@ public class WcSyncServiceImpl implements WcSyncService {
     private final WcSyncJobService jobService;
     private final WcSyncLock lock;
     private final ObjectMapper om;
+    private final AdProductImageMapper adProductImageMapper;
 
     // WcSyncRunner 依赖本 service，本 service 又依赖 runner —— @Lazy 打破循环。
     @Autowired
@@ -214,6 +220,31 @@ public class WcSyncServiceImpl implements WcSyncService {
 
         WcProduct wcProduct = build(p, wcCategoryId, wcBrandId, enabled, imageSrc);
 
+        // ---- 广告图（AI 生图保留图）：产品有/有过广告图才走此分支，否则行为与旧版完全一致 ----
+        List<AdProductImage> adImages = adProductImageMapper.selectList(
+                Wrappers.<AdProductImage>lambdaQuery()
+                        .eq(AdProductImage::getSupplierProductId, p.getId())
+                        .orderByAsc(AdProductImage::getSort));
+        boolean adActive = !adImages.isEmpty()
+                || adProductImageMapper.countIncludingDeleted(p.getId()) > 0;
+        if (adActive) {
+            List<WcImage> imgs = new ArrayList<>();
+            if (imageSrc != null) {
+                imgs.add(new WcImage(null, imageSrc));
+            } else {
+                Long mainId = (record != null && record.getWcImageId() != null) ? record.getWcImageId()
+                        : adoptImageId != null ? adoptImageId
+                        : (wcId != null ? wc.findProductMainImageId(wcId) : null);
+                if (mainId != null) imgs.add(new WcImage(mainId, null));
+            }
+            for (AdProductImage ai : adImages) {
+                imgs.add(ai.getWcMediaId() != null
+                        ? new WcImage(ai.getWcMediaId(), null)
+                        : new WcImage(null, publicAdUrl(ai.getFileUrl())));
+            }
+            wcProduct.setImagesOverride(imgs);
+        }
+
         String outcome;
         WcProductRef ref;
         if (wcId == null) {
@@ -241,7 +272,39 @@ public class WcSyncServiceImpl implements WcSyncService {
         }
 
         saveRecord(p.getId(), wcId, p.getProductCode(), outcome, null, finalImageId, finalSyncedUrl);
+
+        // ---- 广告图回写 media id + 描述标记区块 ----
+        if (adActive) {
+            List<WcImage> respImgs = ref.getImages() == null ? List.of() : ref.getImages();
+            int offset = respImgs.size() - adImages.size();   // 前面是主图（0 或 1 张）
+            List<String> wcAdUrls = new ArrayList<>();
+            for (int i = 0; i < adImages.size(); i++) {
+                int idx = offset + i;
+                if (idx < 0 || idx >= respImgs.size()) continue;   // 响应缺图则跳过，下次同步重试
+                WcImage r = respImgs.get(idx);
+                if (r.src() != null) wcAdUrls.add(r.src());
+                AdProductImage ai = adImages.get(i);
+                if (ai.getWcMediaId() == null && r.id() != null) {
+                    ai.setWcMediaId(r.id());
+                    adProductImageMapper.updateById(ai);
+                }
+            }
+            // 本次 upsert 未动描述，读到的是手写内容；以 WC 媒体 URL 写入标记区块。
+            WcProductDetail detail = wc.getProduct(wcId);
+            wc.updateProductDescription(wcId, AdDescriptionBlock.apply(detail.description(), wcAdUrls));
+        }
+
         return outcome;
+    }
+
+    /** 广告图公网绝对 URL：WC sideload 需要能从外部访问到本机文件。 */
+    private String publicAdUrl(String fileUrl) {
+        String base = props.getPublicFileBaseUrl();
+        if (!StringUtils.hasText(base)) {
+            throw new BusinessException(ResultCode.WC_NOT_CONFIGURED,
+                    "未配置 app.wc.public-file-base-url，无法上传广告图");
+        }
+        return (base.endsWith("/") ? base.substring(0, base.length() - 1) : base) + fileUrl;
     }
 
     private WcProduct build(SupplierProduct p, long wcCategoryId, long wcBrandId, boolean enabled, String imageSrc) {
@@ -250,8 +313,9 @@ public class WcSyncServiceImpl implements WcSyncService {
                 .setScale(2, RoundingMode.HALF_UP).toPlainString();
         String salePrice = wholesale.multiply(props.getSaleMultiplier())
                 .setScale(2, RoundingMode.HALF_UP).toPlainString();
+        // imagesOverride 默认 null：沿用 imageSrc 旧语义；upsertOne 中广告图分支会按需覆盖。
         return new WcProduct(p.getName(), p.getProductCode(), regularPrice, salePrice,
-                DEFAULT_STOCK_QUANTITY, enabled ? "publish" : "draft", wcCategoryId, wcBrandId, imageSrc);
+                DEFAULT_STOCK_QUANTITY, enabled ? "publish" : "draft", wcCategoryId, wcBrandId, imageSrc, null);
     }
 
     private long resolveWcCategory(Long categoryId, Map<Long, Long> cache) {

@@ -50,3 +50,4 @@ app:
     consumer-secret: ${WC_CONSUMER_SECRET:}
     regular-multiplier: 1.75
     sale-multiplier: 1.5
+    public-file-base-url: ${WC_PUBLIC_FILE_BASE_URL:}

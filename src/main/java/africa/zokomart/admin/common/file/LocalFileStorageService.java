@@ -49,6 +49,34 @@ public class LocalFileStorageService implements FileStorageService {
         return props.getUrlPrefix() + "/" + cat + "/" + filename;
     }
 
+    @Override
+    public String storeBytes(byte[] data, String category, String ext) {
+        String cat = (category != null && CATEGORY.matcher(category).matches()) ? category : "common";
+        String filename = UUID.randomUUID().toString().replace("-", "") + "." + ext;
+        try {
+            Path dir = Paths.get(props.getDir(), cat).toAbsolutePath().normalize();
+            Files.createDirectories(dir);
+            Files.write(dir.resolve(filename), data);
+        } catch (IOException e) {
+            throw new BusinessException(ResultCode.BUSINESS_ERROR, "文件写入失败");
+        }
+        return props.getUrlPrefix() + "/" + cat + "/" + filename;
+    }
+
+    @Override
+    public Path resolvePublicUrl(String publicUrl) {
+        String prefix = props.getUrlPrefix() + "/";
+        if (publicUrl == null || !publicUrl.startsWith(prefix)) {
+            throw new BusinessException(ResultCode.AD_INVALID_TEMP_URL);
+        }
+        Path base = Paths.get(props.getDir()).toAbsolutePath().normalize();
+        Path target = base.resolve(publicUrl.substring(prefix.length())).normalize();
+        if (!target.startsWith(base)) {
+            throw new BusinessException(ResultCode.AD_INVALID_TEMP_URL);
+        }
+        return target;
+    }
+
     private String extOf(String name) {
         if (name == null) {
             return "";

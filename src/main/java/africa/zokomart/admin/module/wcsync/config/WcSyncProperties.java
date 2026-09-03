@@ -18,4 +18,6 @@ public class WcSyncProperties {
     private BigDecimal regularMultiplier = new BigDecimal("1.75");
     /** Sale Price = 批发价 × 此倍率。 */
     private BigDecimal saleMultiplier = new BigDecimal("1.5");
+    /** 公网访问本机文件的基础 URL（WC sideload 广告图需要可外网访问）。 */
+    private String publicFileBaseUrl;
 }

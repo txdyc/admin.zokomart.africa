@@ -24,4 +24,14 @@ public class PageResult<T> {
         p.size = page.getSize();
         return p;
     }
+
+    /** 由已转换的 VO 列表 + 分页元数据构造（用于 service 层将 entity 转 VO 后包装）。 */
+    public static <T> PageResult<T> of(List<T> records, long total, long current, long size) {
+        PageResult<T> p = new PageResult<>();
+        p.records = records;
+        p.total = total;
+        p.current = current;
+        p.size = size;
+        return p;
+    }
 }
