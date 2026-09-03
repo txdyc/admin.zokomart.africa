@@ -196,6 +196,66 @@ class WcSyncServiceTest {
         assertTrue(ex.getMessage().contains("nope"));
     }
 
+    /** 等任务跑到终态，避免异步 runSync 仍持有站点锁而影响后续用例。 */
+    private void awaitTerminal(long jobId) throws Exception {
+        for (int i = 0; i < 100; i++) {
+            if (!WcSyncJobStatus.RUNNING.equals(jobMapper.selectById(jobId).getStatus())) return;
+            Thread.sleep(50);
+        }
+        fail("任务未在预期时间内结束: " + jobId);
+    }
+
+    @Test
+    void omitting_site_codes_defaults_to_all_configured_sites() throws Exception {
+        String t = token();
+        long ts = System.currentTimeMillis();
+        long supplierId = postForId("/api/suppliers",
+                "{\"name\":\"WC_SupA_" + ts + "\",\"contactPhone\":\"024\",\"status\":1}", t);
+        long brandId = postForId("/api/brands",
+                "{\"name\":\"WC_BrandA_" + ts + "\",\"sort\":1,\"status\":1}", t);
+        // 故意不建产品：runSync 空转，异步派发不产生 WC 调用
+
+        WcSyncProperties.WcSite unconfigured = new WcSyncProperties.WcSite();
+        unconfigured.setCode("draftsite");      // 缺 base-url/密钥
+        unconfigured.setName("DraftSite");
+        when(clientFactory.sites())
+                .thenReturn(List.of(site("zokomart"), site("kianosmart"), unconfigured));
+        when(clientFactory.site(anyString())).thenReturn(site("zokomart"));
+        when(clientFactory.forSite(anyString())).thenReturn(wc);
+
+        // siteCodes 省略（null）→ 落到"全部已配置站点"
+        List<Long> jobIds = wcSyncService.startSync(supplierId, List.of(brandId), null);
+
+        assertEquals(2, jobIds.size());   // 未配置的 draftsite 被排除，不报错
+        List<String> codes = jobIds.stream()
+                .map(id -> jobMapper.selectById(id).getSiteCode()).sorted().toList();
+        assertEquals(List.of("kianosmart", "zokomart"), codes);   // 每站一个 job
+
+        for (long id : jobIds) awaitTerminal(id);
+        mvc.perform(delete("/api/suppliers/" + supplierId).header("Authorization", t));
+        mvc.perform(delete("/api/brands/" + brandId).header("Authorization", t));
+    }
+
+    @Test
+    void sites_endpoint_exposes_code_name_and_configured_flag() throws Exception {
+        String t = token();
+        WcSyncProperties.WcSite kiano = new WcSyncProperties.WcSite();
+        kiano.setCode("kianosmart");            // 缺 base-url/密钥 → configured=false
+        kiano.setName("KianoSmart");
+        when(clientFactory.sites()).thenReturn(List.of(site("zokomart"), kiano));
+
+        mvc.perform(get("/api/wc-sync/sites").header("Authorization", t))
+                .andExpect(jsonPath("$.code").value(0))
+                .andExpect(jsonPath("$.data.length()").value(2))
+                .andExpect(jsonPath("$.data[0].code").value("zokomart"))
+                .andExpect(jsonPath("$.data[0].name").value("ZokoMart"))
+                .andExpect(jsonPath("$.data[0].configured").value(true))
+                .andExpect(jsonPath("$.data[1].code").value("kianosmart"))
+                .andExpect(jsonPath("$.data[1].name").value("KianoSmart"))
+                // 前端据此置灰不可选，必须如实反映"未配置"
+                .andExpect(jsonPath("$.data[1].configured").value(false));
+    }
+
     @Test
     void start_rejects_unconfigured_site() {
         WcSyncProperties.WcSite bad = new WcSyncProperties.WcSite();
