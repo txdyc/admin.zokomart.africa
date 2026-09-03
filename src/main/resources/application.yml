@@ -45,9 +45,18 @@ app:
     allowed-hosts:
       - morgan.dzncm.com
   wc:
-    base-url: ${WC_BASE_URL:}
-    consumer-key: ${WC_CONSUMER_KEY:}
-    consumer-secret: ${WC_CONSUMER_SECRET:}
     regular-multiplier: 1.75
     sale-multiplier: 1.5
     public-file-base-url: ${WC_PUBLIC_FILE_BASE_URL:}
+    sites:
+      - code: zokomart
+        name: ZokoMart
+        base-url: ${WC_BASE_URL:}
+        consumer-key: ${WC_CONSUMER_KEY:}
+        consumer-secret: ${WC_CONSUMER_SECRET:}
+      - code: kianosmart
+        name: KianoSmart
+        base-url: ${WC_KIANO_BASE_URL:}
+        consumer-key: ${WC_KIANO_CONSUMER_KEY:}
+        consumer-secret: ${WC_KIANO_CONSUMER_SECRET:}
+        # regular-multiplier / sale-multiplier 可选覆盖全局

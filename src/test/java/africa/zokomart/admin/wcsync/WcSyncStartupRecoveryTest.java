@@ -20,6 +20,7 @@ class WcSyncStartupRecoveryTest {
     void marks_dangling_running_as_interrupted() throws Exception {
         WcSyncJob job = new WcSyncJob();
         job.setSupplierId(1L);
+        job.setSiteCode("zokomart");
         job.setStatus(WcSyncJobStatus.RUNNING);
         job.setTotal(5); job.setProcessed(2);
         job.setCreatedCount(0); job.setUpdatedCount(0);

@@ -1,12 +1,16 @@
 package africa.zokomart.admin.wcsync;
 
+import africa.zokomart.admin.module.ad.entity.AdImageSiteMedia;
 import africa.zokomart.admin.module.ad.entity.AdProductImage;
+import africa.zokomart.admin.module.ad.mapper.AdImageSiteMediaMapper;
 import africa.zokomart.admin.module.ad.mapper.AdProductImageMapper;
 import africa.zokomart.admin.module.wcsync.client.*;
+import africa.zokomart.admin.module.wcsync.config.WcSyncProperties;
 import africa.zokomart.admin.module.wcsync.entity.WcSyncJob;
 import africa.zokomart.admin.module.wcsync.entity.WcSyncJobStatus;
 import africa.zokomart.admin.module.wcsync.mapper.WcSyncJobMapper;
 import africa.zokomart.admin.module.wcsync.service.WcSyncService;
+import com.baomidou.mybatisplus.core.toolkit.Wrappers;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
@@ -35,8 +39,17 @@ class WcSyncAdImagesTest {
     @Autowired WcSyncService wcSyncService;
     @Autowired WcSyncJobMapper jobMapper;
     @Autowired AdProductImageMapper adImageMapper;
+    @Autowired AdImageSiteMediaMapper adMediaMapper;
 
-    @MockBean WooCommerceClient wc;
+    @MockBean WooCommerceClientFactory clientFactory;
+    WooCommerceClient wc = mock(WooCommerceClient.class);
+
+    private void stubSingleSite() {
+        WcSyncProperties.WcSite zoko = WcSyncServiceTest.site("zokomart");
+        when(clientFactory.sites()).thenReturn(List.of(zoko));
+        when(clientFactory.site("zokomart")).thenReturn(zoko);
+        when(clientFactory.forSite("zokomart")).thenReturn(wc);
+    }
 
     private String token() throws Exception {
         MvcResult r = mvc.perform(post("/api/auth/login").contentType(MediaType.APPLICATION_JSON)
@@ -51,9 +64,10 @@ class WcSyncAdImagesTest {
         return om.readTree(r.getResponse().getContentAsString()).at("/data").asLong();
     }
 
-    private long newJob(long supplierId, List<Long> brandIds) {
+    private long newJob(long supplierId, List<Long> brandIds, String siteCode) {
         WcSyncJob job = new WcSyncJob();
         job.setSupplierId(supplierId);
+        job.setSiteCode(siteCode);
         job.setBrandIds(brandIds.toString());
         job.setStatus(WcSyncJobStatus.RUNNING);
         job.setTotal(1); job.setProcessed(0);
@@ -62,6 +76,12 @@ class WcSyncAdImagesTest {
         job.setFailedItems("[]");
         jobMapper.insert(job);
         return job.getId();
+    }
+
+    private AdImageSiteMedia findMedia(Long adImageId, String siteCode) {
+        return adMediaMapper.selectOne(Wrappers.<AdImageSiteMedia>lambdaQuery()
+                .eq(AdImageSiteMedia::getAdImageId, adImageId)
+                .eq(AdImageSiteMedia::getSiteCode, siteCode));
     }
 
     @Test
@@ -83,7 +103,7 @@ class WcSyncAdImagesTest {
         ad.setSort(1);
         adImageMapper.insert(ad);
 
-        when(wc.configured()).thenReturn(true);
+        stubSingleSite();
         when(wc.ensureBrand(any())).thenReturn(500L);
         when(wc.findProductIdBySku(any())).thenReturn(null);
         when(wc.createProduct(any())).thenReturn(new WcProductRef(9001L, 7001L, List.of(
@@ -91,7 +111,8 @@ class WcSyncAdImagesTest {
                 new WcImage(7002L, "https://wc/ad1.jpg"))));
         when(wc.getProduct(9001L)).thenReturn(new WcProductDetail(9001L, "", List.of()));
 
-        wcSyncService.runSync(newJob(supplierId, List.of(brandId)), supplierId, List.of(brandId));
+        wcSyncService.runSync(newJob(supplierId, List.of(brandId), "zokomart"),
+                supplierId, List.of(brandId), "zokomart");
 
         // gallery：主图 src + 广告图公网 src
         ArgumentCaptor<WcProduct> cap = ArgumentCaptor.forClass(WcProduct.class);
@@ -108,15 +129,17 @@ class WcSyncAdImagesTest {
         assertTrue(desc.getValue().contains("ZOKO-AD:START"));
         assertTrue(desc.getValue().contains("https://wc/ad1.jpg"));
 
-        // 回写 media id
-        AdProductImage after = adImageMapper.selectById(ad.getId());
-        assertEquals(7002L, after.getWcMediaId());
+        // 回写 media id（按站点存 ad_image_site_media）
+        AdImageSiteMedia media = findMedia(ad.getId(), "zokomart");
+        assertNotNull(media);
+        assertEquals(7002L, media.getWcMediaId());
 
         // 第二次同步：广告图按 id 引用，不重传 src
         when(wc.updateProduct(anyLong(), any())).thenReturn(new WcProductRef(9001L, 7001L, List.of(
                 new WcImage(7001L, "https://wc/main.jpg"),
                 new WcImage(7002L, "https://wc/ad1.jpg"))));
-        wcSyncService.runSync(newJob(supplierId, List.of(brandId)), supplierId, List.of(brandId));
+        wcSyncService.runSync(newJob(supplierId, List.of(brandId), "zokomart"),
+                supplierId, List.of(brandId), "zokomart");
         ArgumentCaptor<WcProduct> cap2 = ArgumentCaptor.forClass(WcProduct.class);
         verify(wc).updateProduct(anyLong(), cap2.capture());
         assertEquals(7002L, cap2.getValue().getImagesOverride().get(1).id());
@@ -124,6 +147,8 @@ class WcSyncAdImagesTest {
 
         // 清理
         adImageMapper.deleteById(ad.getId());
+        adMediaMapper.delete(Wrappers.<AdImageSiteMedia>lambdaQuery()
+                .eq(AdImageSiteMedia::getAdImageId, ad.getId()));
         mvc.perform(delete("/api/supplier-products/" + spId).header("Authorization", t));
         mvc.perform(delete("/api/suppliers/" + supplierId).header("Authorization", t));
         mvc.perform(delete("/api/brands/" + brandId).header("Authorization", t));
@@ -141,12 +166,13 @@ class WcSyncAdImagesTest {
                 "{\"supplierId\":" + supplierId + ",\"name\":\"WCNOP_" + ts + "\",\"brandId\":" + brandId
                         + ",\"productCode\":\"WCNO_" + ts + "\",\"wholesalePrice\":100,\"minPurchaseQty\":1,\"status\":1}", t);
 
-        when(wc.configured()).thenReturn(true);
+        stubSingleSite();
         when(wc.ensureBrand(any())).thenReturn(500L);
         when(wc.findProductIdBySku(any())).thenReturn(null);
         when(wc.createProduct(any())).thenReturn(new WcProductRef(9200L, null));
 
-        wcSyncService.runSync(newJob(supplierId, List.of(brandId)), supplierId, List.of(brandId));
+        wcSyncService.runSync(newJob(supplierId, List.of(brandId), "zokomart"),
+                supplierId, List.of(brandId), "zokomart");
 
         ArgumentCaptor<WcProduct> cap = ArgumentCaptor.forClass(WcProduct.class);
         verify(wc).createProduct(cap.capture());

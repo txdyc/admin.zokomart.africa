@@ -1,5 +1,6 @@
 package africa.zokomart.admin.module.wcsync.service.impl;
 
+import africa.zokomart.admin.module.wcsync.config.WcSyncProperties;
 import africa.zokomart.admin.module.wcsync.entity.WcSyncJob;
 import africa.zokomart.admin.module.wcsync.entity.WcSyncJobStatus;
 import africa.zokomart.admin.module.wcsync.mapper.WcSyncJobMapper;
@@ -24,11 +25,14 @@ public class WcSyncJobServiceImpl implements WcSyncJobService {
 
     private final WcSyncJobMapper jobMapper;
     private final ObjectMapper om;
+    private final WcSyncProperties props;
 
     @Override
-    public WcSyncJob createRunning(Long supplierId, List<Long> brandIds, int total, String operator) {
+    public WcSyncJob createRunning(Long supplierId, List<Long> brandIds, int total, String operator,
+                                    String siteCode) {
         WcSyncJob job = new WcSyncJob();
         job.setSupplierId(supplierId);
+        job.setSiteCode(siteCode);
         job.setBrandIds(toJson(brandIds));
         job.setOperator(operator);
         job.setStatus(WcSyncJobStatus.RUNNING);
@@ -68,6 +72,8 @@ public class WcSyncJobServiceImpl implements WcSyncJobService {
     private WcSyncJobVO toVO(WcSyncJob job) {
         WcSyncJobVO vo = new WcSyncJobVO();
         vo.setJobId(job.getId());
+        vo.setSiteCode(job.getSiteCode());
+        vo.setSiteName(siteName(job.getSiteCode()));
         vo.setStatus(job.getStatus());
         vo.setTotal(nz(job.getTotal()));
         vo.setProcessed(nz(job.getProcessed()));
@@ -82,6 +88,16 @@ public class WcSyncJobServiceImpl implements WcSyncJobService {
     }
 
     private int nz(Integer v) { return v == null ? 0 : v; }
+
+    /** 站点名称：按 code 查配置；查不到（如已下线的站点）回退 code。 */
+    private String siteName(String code) {
+        if (code == null) return null;
+        return props.getSites().stream()
+                .filter(s -> code.equals(s.getCode()))
+                .map(WcSyncProperties.WcSite::getName)
+                .filter(n -> n != null && !n.isBlank())
+                .findFirst().orElse(code);
+    }
 
     private String toJson(Object o) {
         try { return om.writeValueAsString(o); }

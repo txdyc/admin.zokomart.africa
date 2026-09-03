@@ -9,6 +9,8 @@ import java.util.List;
 @Data
 public class WcSyncJobVO {
     private Long jobId;
+    private String siteCode;        // 目标站点 code
+    private String siteName;        // 目标站点名称（未配置站点回退 code）
     private String status;          // RUNNING/SUCCESS/PARTIAL/FAILED/INTERRUPTED
     private int total;
     private int processed;

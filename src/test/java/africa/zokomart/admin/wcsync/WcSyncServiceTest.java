@@ -5,6 +5,8 @@ import africa.zokomart.admin.common.result.ResultCode;
 import africa.zokomart.admin.module.wcsync.client.WcProduct;
 import africa.zokomart.admin.module.wcsync.client.WcProductRef;
 import africa.zokomart.admin.module.wcsync.client.WooCommerceClient;
+import africa.zokomart.admin.module.wcsync.client.WooCommerceClientFactory;
+import africa.zokomart.admin.module.wcsync.config.WcSyncProperties;
 import africa.zokomart.admin.module.wcsync.entity.WcSyncJob;
 import africa.zokomart.admin.module.wcsync.entity.WcSyncJobStatus;
 import africa.zokomart.admin.module.wcsync.mapper.WcSyncJobMapper;
@@ -38,7 +40,26 @@ class WcSyncServiceTest {
     @Autowired WcSyncJobMapper jobMapper;
     @Autowired WcSyncLock lock;
 
-    @MockBean WooCommerceClient wc;
+    @MockBean WooCommerceClientFactory clientFactory;
+    WooCommerceClient wc = mock(WooCommerceClient.class);
+
+    static WcSyncProperties.WcSite site(String code) {
+        WcSyncProperties.WcSite s = new WcSyncProperties.WcSite();
+        s.setCode(code);
+        s.setName(code.equals("zokomart") ? "ZokoMart" : "KianoSmart");
+        s.setBaseUrl("https://" + code + ".example");
+        s.setConsumerKey("ck");
+        s.setConsumerSecret("cs");
+        return s;
+    }
+
+    /** 把工厂 mock 指向单站点 zokomart + mock 客户端 wc。 */
+    private void stubSingleSite() {
+        WcSyncProperties.WcSite zoko = site("zokomart");
+        when(clientFactory.sites()).thenReturn(List.of(zoko));
+        when(clientFactory.site("zokomart")).thenReturn(zoko);
+        when(clientFactory.forSite("zokomart")).thenReturn(wc);
+    }
 
     private String token() throws Exception {
         MvcResult r = mvc.perform(post("/api/auth/login").contentType(MediaType.APPLICATION_JSON)
@@ -54,9 +75,10 @@ class WcSyncServiceTest {
     }
 
     /** 直接造一个 RUNNING 任务行，返回 jobId（绕过异步，便于同步调用 runSync）。 */
-    private long newJob(long supplierId, List<Long> brandIds, int total) {
+    private long newJob(long supplierId, List<Long> brandIds, int total, String siteCode) {
         WcSyncJob job = new WcSyncJob();
         job.setSupplierId(supplierId);
+        job.setSiteCode(siteCode);
         job.setBrandIds(brandIds.toString());
         job.setStatus(WcSyncJobStatus.RUNNING);
         job.setTotal(total);
@@ -83,15 +105,15 @@ class WcSyncServiceTest {
                         + ",\"productCode\":\"WCA_" + ts + "\",\"wholesalePrice\":100,\"minPurchaseQty\":1,"
                         + "\"status\":1,\"imageUrl\":\"http://img/x.jpg\"}", t);
 
-        when(wc.configured()).thenReturn(true);
+        stubSingleSite();
         when(wc.ensureBrand(any())).thenReturn(500L);
         when(wc.findProductIdBySku(any())).thenReturn(null);
         when(wc.createProduct(any())).thenReturn(new WcProductRef(9001L, 7001L));
         when(wc.updateProduct(anyLong(), any())).thenReturn(new WcProductRef(9001L, 7001L));
 
         // 首次：create，带 imageSrc
-        long job1 = newJob(supplierId, List.of(brandId), 1);
-        wcSyncService.runSync(job1, supplierId, List.of(brandId));
+        long job1 = newJob(supplierId, List.of(brandId), 1, "zokomart");
+        wcSyncService.runSync(job1, supplierId, List.of(brandId), "zokomart");
         org.mockito.ArgumentCaptor<WcProduct> c1 = org.mockito.ArgumentCaptor.forClass(WcProduct.class);
         verify(wc).createProduct(c1.capture());
         assertEquals("http://img/x.jpg", c1.getValue().getImageSrc());   // 首次传 src
@@ -100,8 +122,8 @@ class WcSyncServiceTest {
         assertEquals(1, j1.getCreatedCount());
 
         // 再次：图源未变 → update 不传 images（imageSrc=null）
-        long job2 = newJob(supplierId, List.of(brandId), 1);
-        wcSyncService.runSync(job2, supplierId, List.of(brandId));
+        long job2 = newJob(supplierId, List.of(brandId), 1, "zokomart");
+        wcSyncService.runSync(job2, supplierId, List.of(brandId), "zokomart");
         org.mockito.ArgumentCaptor<WcProduct> c2 = org.mockito.ArgumentCaptor.forClass(WcProduct.class);
         verify(wc).updateProduct(anyLong(), c2.capture());
         assertNull(c2.getValue().getImageSrc());                          // 关键：不重传图
@@ -127,13 +149,13 @@ class WcSyncServiceTest {
                 "{\"supplierId\":" + supplierId + ",\"name\":\"PD_" + ts + "\",\"brandId\":" + brandId
                         + ",\"productCode\":\"WCD_" + ts + "\",\"wholesalePrice\":100,\"minPurchaseQty\":1,\"status\":0}", t);
 
-        when(wc.configured()).thenReturn(true);
+        stubSingleSite();
         when(wc.ensureBrand(any())).thenReturn(500L);
         when(wc.findProductIdBySku(any())).thenReturn(null);
         when(wc.createProduct(any())).thenReturn(new WcProductRef(9100L, null));
 
-        long job = newJob(supplierId, List.of(brandId), 1);
-        wcSyncService.runSync(job, supplierId, List.of(brandId));
+        long job = newJob(supplierId, List.of(brandId), 1, "zokomart");
+        wcSyncService.runSync(job, supplierId, List.of(brandId), "zokomart");
 
         org.mockito.ArgumentCaptor<WcProduct> cap = org.mockito.ArgumentCaptor.forClass(WcProduct.class);
         verify(wc).createProduct(cap.capture());
@@ -147,20 +169,42 @@ class WcSyncServiceTest {
 
     @Test
     void start_rejects_when_lock_held() {
-        when(wc.configured()).thenReturn(true);
-        assertTrue(lock.tryAcquire());           // 预占锁
+        stubSingleSite();
+        assertTrue(lock.tryAcquire("zokomart"));   // 预占 zokomart 站点锁
         try {
             BusinessException ex = assertThrows(BusinessException.class,
-                    () -> wcSyncService.startSync(1L, List.of(1L)));
+                    () -> wcSyncService.startSync(1L, List.of(1L), List.of("zokomart")));
             assertEquals(ResultCode.WC_SYNC_RUNNING.getCode(), ex.getCode()); // 业务码 40016
         } finally {
-            lock.release();
+            lock.release("zokomart");
         }
     }
 
     @Test
-    void start_rejects_when_not_configured() {
-        when(wc.configured()).thenReturn(false);
-        assertThrows(RuntimeException.class, () -> wcSyncService.startSync(1L, List.of(1L)));
+    void start_rejects_when_no_site_configured() {
+        when(clientFactory.sites()).thenReturn(List.of());
+        assertThrows(RuntimeException.class,
+                () -> wcSyncService.startSync(1L, List.of(1L), null));
+    }
+
+    @Test
+    void start_rejects_unknown_site_code() {
+        stubSingleSite();
+        BusinessException ex = assertThrows(BusinessException.class,
+                () -> wcSyncService.startSync(1L, List.of(1L), List.of("nope")));
+        assertEquals(ResultCode.WC_NOT_CONFIGURED.getCode(), ex.getCode());
+        assertTrue(ex.getMessage().contains("nope"));
+    }
+
+    @Test
+    void start_rejects_unconfigured_site() {
+        WcSyncProperties.WcSite bad = new WcSyncProperties.WcSite();
+        bad.setCode("kianosmart");   // 缺 base-url/密钥
+        bad.setName("KianoSmart");
+        when(clientFactory.sites()).thenReturn(List.of(site("zokomart"), bad));
+        BusinessException ex = assertThrows(BusinessException.class,
+                () -> wcSyncService.startSync(1L, List.of(1L), List.of("kianosmart")));
+        assertEquals(ResultCode.WC_NOT_CONFIGURED.getCode(), ex.getCode());
+        assertTrue(ex.getMessage().contains("KianoSmart"));
     }
 }

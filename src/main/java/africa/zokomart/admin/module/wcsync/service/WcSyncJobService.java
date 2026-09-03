@@ -8,8 +8,8 @@ import java.util.List;
 
 public interface WcSyncJobService {
 
-    /** 建 RUNNING 任务行，返回持久化后的实体（含雪花 id）。 */
-    WcSyncJob createRunning(Long supplierId, List<Long> brandIds, int total, String operator);
+    /** 建 RUNNING 任务行（一次运行 × 一个站点），返回持久化后的实体（含雪花 id）。 */
+    WcSyncJob createRunning(Long supplierId, List<Long> brandIds, int total, String operator, String siteCode);
 
     /** 持久化任务当前进度/计数/状态。 */
     void save(WcSyncJob job);

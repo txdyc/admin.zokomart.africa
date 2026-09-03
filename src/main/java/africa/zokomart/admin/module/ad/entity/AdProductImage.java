@@ -13,6 +13,5 @@ public class AdProductImage extends BaseEntity {
     private String fileUrl;
     private String prompt;
     private Long modelId;
-    private Long wcMediaId;
     private Integer sort;
 }
