@@ -92,6 +92,18 @@
       <artifactId>jsoup</artifactId>
       <version>1.17.2</version>
     </dependency>
+    <dependency>
+      <groupId>org.dhatim</groupId>
+      <artifactId>fastexcel-reader</artifactId>
+      <version>0.18.4</version>
+    </dependency>
+    <!-- 仅测试用：构造 xlsx 夹具 -->
+    <dependency>
+      <groupId>org.dhatim</groupId>
+      <artifactId>fastexcel</artifactId>
+      <version>0.18.4</version>
+      <scope>test</scope>
+    </dependency>
   </dependencies>
 
   <build>
