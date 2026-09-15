@@ -2375,17 +2375,21 @@ Expected: 只输出 `Sale Price`，没有 `Sake Price`。
 改了代码必须重建，否则旧 jar 上新端点会 500。
 
 ```bash
-cd backend
-# 先停掉占用 target/*.jar 的旧进程，否则 clean 失败
-taskkill //F //IM java.exe 2>/dev/null || true
-mvn clean package -DskipTests -q && ls -la target/*.jar
+cd backend && mvn clean package -DskipTests -q && ls -la target/*.jar
 ```
 
-然后后台启动，用 `local` profile（密钥都在未提交的 `application-local.yml` 里）：
+若 `clean` 因文件锁失败，**只杀占用 8081 端口的那个进程**，不要 `taskkill //F //IM java.exe`
+—— 那会把用户的 IDE 一起杀掉。
+
+然后后台启动：
 
 ```bash
-cd backend && java -jar target/*.jar --spring.profiles.active=local
+cd backend && java -jar target/admin-1.0.0.jar
 ```
+
+**不要**加 `--spring.profiles.active=local`：`application.yml` 里默认已是 `active: dev,local`，
+显式只传 `local` 会把 `dev` 挤掉，而数据源 `url` 正是写在 `application-dev.yml` 里的，
+结果是 "Failed to configure a DataSource: 'url' attribute is not specified" 直接起不来。
 
 启动前确认 MySQL 与 **Redis（需带密码启动）** 都在跑，否则应用起不来。
 
