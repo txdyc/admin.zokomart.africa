@@ -100,4 +100,46 @@ class SalesOrderLabelsApiTest {
             assertThat(n.get("id").asLong()).isNotEqualTo(orderId);
         }
     }
+
+    /**
+     * labels() 过滤口径是 order_date（业务日期），不是 create_time 范围：面单打印面板没有
+     * 日期选择器，永远按“今天”请求，一张 orderDate 是过去日期的历史/导入订单只能靠直接带
+     * date 参数请求到；这里验证按其真实 order_date 请求时能查到，不依赖 create_time 是否
+     * 恰好也落在同一天。
+     */
+    @Test
+    void labels_returns_order_with_past_order_date_when_that_date_is_requested() throws Exception {
+        String su = login("superadmin", "Admin@123");
+        long ts = System.nanoTime();
+
+        long supplierId = postForId("/api/suppliers", "{\"name\":\"LBLP_Sup_" + ts + "\",\"status\":1}", su);
+        long spId = postForId("/api/supplier-products",
+                "{\"supplierId\":" + supplierId + ",\"name\":\"LBLP_Prod_" + ts
+                        + "\",\"productCode\":\"LBLPC_" + ts + "\",\"wholesalePrice\":100,\"retailPrice\":200,"
+                        + "\"minPurchaseQty\":1,\"status\":1}", su);
+        mvc.perform(put("/api/inventory/stocks/" + spId).header("Authorization", su)
+                        .contentType(MediaType.APPLICATION_JSON).content("{\"quantity\":10}"))
+                .andExpect(jsonPath("$.code").value(0));
+
+        String pastDate = "2026-01-05";
+        long orderId = postForId("/api/sales-orders",
+                "{\"customerName\":\"Past\",\"customerPhone\":\"024777\",\"customerAddress\":\"Takoradi\","
+                        + "\"orderDate\":\"" + pastDate + "\",\"items\":[{\"supplierProductId\":"
+                        + spId + ",\"qty\":2}]}", su);
+
+        MvcResult res = mvc.perform(get("/api/sales-orders/labels")
+                        .header("Authorization", su).param("date", pastDate))
+                .andExpect(jsonPath("$.code").value(0)).andReturn();
+        JsonNode data = om.readTree(res.getResponse().getContentAsString()).at("/data");
+        assertThat(data.isArray()).isTrue();
+
+        boolean found = false;
+        for (JsonNode n : data) {
+            if (n.get("id").asLong() == orderId) {
+                found = true;
+                break;
+            }
+        }
+        assertThat(found).as("按历史订单真实 order_date 请求应能查到，即便它早已不在“今天”").isTrue();
+    }
 }

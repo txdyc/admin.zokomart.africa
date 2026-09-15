@@ -24,8 +24,8 @@ public final class SalesImportConst {
     public static final String COL_PRODUCT_CODE = "Product Code";
     public static final String COL_QUANTITY = "Quantity";
     public static final String COL_ORDER_DATE = "Order Date";
-    /** 可选列：存在则忽略其值（系统状态一律 PENDING_DISPATCH）。 */
-    public static final String COL_STATUS = "Status";
+    /** 可选列 "Status"：不在 REQUIRED_COLUMNS 里即为可选，存在时其值被忽略
+     *（系统状态一律 PENDING_DISPATCH），没有代码需要引用这个列名，故不声明常量。 */
 
     public static final List<String> REQUIRED_COLUMNS = List.of(
             COL_ORDER_ID, COL_SALE_PRICE, COL_CUSTOMER_NAME, COL_CITY, COL_ADDRESS,

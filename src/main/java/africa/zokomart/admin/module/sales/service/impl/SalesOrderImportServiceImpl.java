@@ -17,6 +17,8 @@ import africa.zokomart.admin.module.supplierproduct.entity.SupplierProduct;
 import africa.zokomart.admin.module.supplierproduct.mapper.SupplierProductMapper;
 import com.baomidou.mybatisplus.core.toolkit.Wrappers;
 import lombok.RequiredArgsConstructor;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 import org.springframework.web.multipart.MultipartFile;
 
@@ -43,7 +45,12 @@ import java.util.stream.Collectors;
 @RequiredArgsConstructor
 public class SalesOrderImportServiceImpl implements SalesOrderImportService {
 
+    private static final Logger log = LoggerFactory.getLogger(SalesOrderImportServiceImpl.class);
+
     private static final String XLSX_SUFFIX = ".xlsx";
+
+    /** 未分类异常一律回这句给前端；真正原因（含 MyBatis 的 SQL/绑定参数，可能带客户 PII）只落服务端日志。 */
+    private static final String GENERIC_FAILURE_REASON = "订单处理异常，请联系管理员查看服务端日志";
 
     private final SalesOrderService salesOrderService;
     private final SalesOrderMapper salesOrderMapper;
@@ -82,13 +89,21 @@ public class SalesOrderImportServiceImpl implements SalesOrderImportService {
                 return;
             }
             salesOrderService.create(toDto(group));
-            existing.add(key); // 防同一文件内后续重复
             result.setSuccess(result.getSuccess() + 1);
         } catch (IllegalArgumentException | BusinessException ex) {
-            recordFailure(result, group, ex.getMessage());
+            // 这两类异常的 message 是给操作员看的，本来就是安全、可读的业务提示，原样透出。
+            String failingCode = ex instanceof ProductResolutionException pre ? pre.productCode() : null;
+            recordFailure(result, group, ex.getMessage(), failingCode);
         } catch (Exception ex) {
-            recordFailure(result, group, "订单处理异常: " + ex.getMessage());
+            // 未分类异常（典型如 MyBatis PersistenceException）message 里可能带 SQL 与
+            // 绑定参数——客户姓名/电话/地址等 PII，绝不能原样吐给前端；服务端留痕即可。
+            log.warn("导入订单处理异常 rows={}", rowsOf(group), ex);
+            recordFailure(result, group, GENERIC_FAILURE_REASON, null);
         }
+    }
+
+    private static String rowsOf(List<SalesImportRow> group) {
+        return group.stream().map(r -> String.valueOf(r.rowNum())).collect(Collectors.joining(","));
     }
 
     private SalesOrderCreateDTO toDto(List<SalesImportRow> group) {
@@ -121,13 +136,31 @@ public class SalesOrderImportServiceImpl implements SalesOrderImportService {
         List<SupplierProduct> found = supplierProductMapper.selectList(
                 Wrappers.<SupplierProduct>lambdaQuery().eq(SupplierProduct::getProductCode, code));
         if (found.isEmpty()) {
-            throw new IllegalArgumentException("产品编码不存在: " + code);
+            throw new ProductResolutionException("产品编码不存在: " + code, code);
         }
         if (found.size() > 1) {
-            throw new IllegalArgumentException(
-                    "产品编码 " + code + " 匹配到 " + found.size() + " 个供应商产品，无法确定");
+            throw new ProductResolutionException(
+                    "产品编码 " + code + " 匹配到 " + found.size() + " 个供应商产品，无法确定", code);
         }
         return found.get(0);
+    }
+
+    /**
+     * 携带具体失败编码的解析异常。一个订单可能由多行合并而成，出错的编码不一定是
+     * 分组第一行的编码；recordFailure 若退化成「取分组内第一个非空编码」，会在合并
+     * 多行订单（本功能的常态）时把操作员指向一个完全合法、根本没出错的编码。
+     */
+    private static final class ProductResolutionException extends IllegalArgumentException {
+        private final String productCode;
+
+        ProductResolutionException(String message, String productCode) {
+            super(message);
+            this.productCode = productCode;
+        }
+
+        String productCode() {
+            return productCode;
+        }
     }
 
     /** 一次性把相关日期的已有订单读进内存建查重集合，避免逐单查库。 */
@@ -146,15 +179,22 @@ public class SalesOrderImportServiceImpl implements SalesOrderImportService {
                 .collect(Collectors.toCollection(HashSet::new));
     }
 
-    private void recordFailure(SalesOrderImportResultVO result, List<SalesImportRow> group, String reason) {
+    /**
+     * @param failingCode 明确知道的失败编码（如 resolveProduct 抛出的 ProductResolutionException）优先使用；
+     *                    为 null 时（如整行校验错误）退化为分组内第一个非空编码，仅作定位参考。
+     */
+    private void recordFailure(SalesOrderImportResultVO result, List<SalesImportRow> group,
+                                String reason, String failingCode) {
         result.setFailed(result.getFailed() + 1);
+        String code = failingCode != null ? failingCode
+                : group.stream().map(SalesImportRow::productCode)
+                        .filter(java.util.Objects::nonNull).findFirst().orElse(null);
         result.getErrors().add(new SalesOrderImportError(
-                group.stream().map(r -> String.valueOf(r.rowNum())).collect(Collectors.joining(",")),
+                rowsOf(group),
                 group.stream().map(SalesImportRow::externalOrderId)
                         .filter(java.util.Objects::nonNull).collect(Collectors.joining(",")),
                 group.get(0).customerName(),
-                group.stream().map(SalesImportRow::productCode)
-                        .filter(java.util.Objects::nonNull).findFirst().orElse(null),
+                code,
                 reason));
     }
 

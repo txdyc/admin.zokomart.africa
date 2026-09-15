@@ -36,6 +36,7 @@ import java.util.Map;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.multipart;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 
 /**
@@ -81,9 +82,11 @@ class SalesOrderImportApiTest {
                 txMapper.delete(new LambdaQueryWrapper<InventoryTransaction>()
                         .eq(InventoryTransaction::getRefId, o.getId())
                         .eq(InventoryTransaction::getRefType, InventoryConst.REF_SALES_ORDER));
-                itemMapper.delete(new LambdaQueryWrapper<SalesOrderItem>()
-                        .eq(SalesOrderItem::getOrderId, o.getId()));
-                orderMapper.deleteById(o.getId());
+                // sales_order(_item) 继承 BaseEntity 的 @TableLogic：mapper 层 delete/deleteById
+                // 只会置 deleted=1，物理行仍在，每次 mvn test 都会在 dev 库里累积——用原生 JDBC
+                // 物理删除，同 stockSnapshots 清理已经在用的手法。
+                jdbc.update("DELETE FROM sales_order_item WHERE order_id = ?", o.getId());
+                jdbc.update("DELETE FROM sales_order WHERE id = ?", o.getId());
             }
             phone = null;
         }
@@ -109,6 +112,13 @@ class SalesOrderImportApiTest {
                         .content("{\"username\":\"" + user + "\",\"password\":\"" + pwd + "\"}"))
                 .andReturn();
         return om.readTree(r.getResponse().getContentAsString()).at("/data/token").asText();
+    }
+
+    private long postForId(String url, String body, String t) throws Exception {
+        MvcResult r = mvc.perform(post(url).header("Authorization", t)
+                        .contentType(MediaType.APPLICATION_JSON).content(body))
+                .andExpect(jsonPath("$.code").value(0)).andReturn();
+        return om.readTree(r.getResponse().getContentAsString()).at("/data").asLong();
     }
 
     private MockMultipartFile oneRowXlsx(String code) throws Exception {
@@ -173,5 +183,37 @@ class SalesOrderImportApiTest {
                 "未登录不得导入成功，实际响应: " + r.getResponse().getContentAsString());
         assertTrue(orderMapper.selectList(new LambdaQueryWrapper<SalesOrder>()
                 .eq(SalesOrder::getCustomerPhone, phone)).isEmpty(), "未登录不得建单");
+    }
+
+    /**
+     * 设计要求鉴权覆盖三种态：有权限、未登录（见上）、登录但无 sales:order:import 权限（本用例）。
+     * dev 库没有现成「已登录但缺这个权限」的种子账号，就地建一个空权限角色+用户，跑完物理删除。
+     */
+    @Test
+    void logged_in_user_without_import_permission_is_forbidden() throws Exception {
+        String su = token("superadmin", "Admin@123");
+        long ts = System.nanoTime();
+
+        long roleId = postForId("/api/system/roles",
+                "{\"name\":\"NoImport_" + ts + "\",\"code\":\"NOIMPORT_" + ts + "\",\"status\":1}", su);
+        String uname = "noimport_" + ts;
+        long userId = postForId("/api/system/users",
+                "{\"username\":\"" + uname + "\",\"password\":\"Test@123\",\"status\":1}", su);
+        mvc.perform(put("/api/system/users/" + userId + "/roles").header("Authorization", su)
+                        .contentType(MediaType.APPLICATION_JSON).content("{\"roleIds\":[" + roleId + "]}"))
+                .andExpect(jsonPath("$.code").value(0));
+
+        try {
+            String t = token(uname, "Test@123");
+            mvc.perform(multipart("/api/sales-orders/import").file(oneRowXlsx(anyCode()))
+                            .header("Authorization", t))
+                    .andExpect(jsonPath("$.code").value(403));
+            assertTrue(orderMapper.selectList(new LambdaQueryWrapper<SalesOrder>()
+                    .eq(SalesOrder::getCustomerPhone, phone)).isEmpty(), "无权限不得建单");
+        } finally {
+            jdbc.update("DELETE FROM sys_user_role WHERE user_id = ?", userId);
+            jdbc.update("DELETE FROM sys_user WHERE id = ?", userId);
+            jdbc.update("DELETE FROM sys_role WHERE id = ?", roleId);
+        }
     }
 }

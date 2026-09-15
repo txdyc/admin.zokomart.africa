@@ -94,8 +94,11 @@ class SalesOrderCreateFieldsTest {
         txMapper.delete(new LambdaQueryWrapper<InventoryTransaction>()
                 .eq(InventoryTransaction::getRefId, orderId)
                 .eq(InventoryTransaction::getRefType, InventoryConst.REF_SALES_ORDER));
-        itemMapper.delete(new LambdaQueryWrapper<SalesOrderItem>().eq(SalesOrderItem::getOrderId, orderId));
-        orderMapper.deleteById(orderId);
+        // sales_order(_item) 继承 BaseEntity 的 @TableLogic：mapper 层 delete/deleteById 只会
+        // 置 deleted=1，物理行仍在，每次 mvn test 都会在 dev 库里累积——同 SalesOrderImportServiceTest
+        // 已经在用的手法，原生 JDBC 物理删除。
+        jdbc.update("DELETE FROM sales_order_item WHERE order_id = ?", orderId);
+        jdbc.update("DELETE FROM sales_order WHERE id = ?", orderId);
     }
 
     @Test

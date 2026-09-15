@@ -30,7 +30,6 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
-import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -131,13 +130,14 @@ public class SalesOrderServiceImpl extends ServiceImpl<SalesOrderMapper, SalesOr
     @Override
     public List<SalesOrderLabelVO> labels(Long salespersonId, String status, LocalDate date) {
         LocalDate day = date != null ? date : LocalDate.now();
-        LocalDateTime start = day.atStartOfDay();
-        LocalDateTime end = day.plusDays(1).atStartOfDay();
+        // 按业务日期 order_date 过滤，而不是 create_time 范围：手工下单二者当天一致，
+        // 但导入订单的 create_time 被刻意回填成 orderDate（见 create() 注释），
+        // 直接查 order_date 才是语义正确的口径，且有 idx_sales_order_date 支撑，
+        // 不依赖 create_time 回填这个“刻意例外”才能定位到历史订单。
         List<SalesOrder> orders = list(Wrappers.<SalesOrder>lambdaQuery()
                 .eq(salespersonId != null, SalesOrder::getSalespersonId, salespersonId)
                 .eq(status != null && !status.isBlank(), SalesOrder::getStatus, status)
-                .ge(SalesOrder::getCreateTime, start)
-                .lt(SalesOrder::getCreateTime, end)
+                .eq(SalesOrder::getOrderDate, day)
                 .orderByAsc(SalesOrder::getCreateTime));
         return orders.stream().map(o -> {
             SalesOrderLabelVO vo = new SalesOrderLabelVO();

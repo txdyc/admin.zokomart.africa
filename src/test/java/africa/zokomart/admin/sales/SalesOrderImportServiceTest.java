@@ -7,8 +7,10 @@ import africa.zokomart.admin.module.inventory.mapper.InventoryStockMapper;
 import africa.zokomart.admin.module.inventory.mapper.InventoryTransactionMapper;
 import africa.zokomart.admin.module.sales.entity.SalesOrder;
 import africa.zokomart.admin.module.sales.entity.SalesOrderItem;
+import africa.zokomart.admin.module.sales.constant.SalesConst;
 import africa.zokomart.admin.module.sales.mapper.SalesOrderItemMapper;
 import africa.zokomart.admin.module.sales.mapper.SalesOrderMapper;
+import africa.zokomart.admin.module.sales.service.SalesLogisticsService;
 import africa.zokomart.admin.module.sales.service.SalesOrderImportService;
 import africa.zokomart.admin.module.sales.vo.SalesOrderImportResultVO;
 import africa.zokomart.admin.module.supplierproduct.entity.SupplierProduct;
@@ -54,6 +56,8 @@ class SalesOrderImportServiceTest {
     @Autowired
     SalesOrderImportService importService;
     @Autowired
+    SalesLogisticsService logisticsService;
+    @Autowired
     SalesOrderMapper orderMapper;
     @Autowired
     SalesOrderItemMapper itemMapper;
@@ -81,9 +85,11 @@ class SalesOrderImportServiceTest {
                 txMapper.delete(new LambdaQueryWrapper<InventoryTransaction>()
                         .eq(InventoryTransaction::getRefId, o.getId())
                         .eq(InventoryTransaction::getRefType, InventoryConst.REF_SALES_ORDER));
-                itemMapper.delete(new LambdaQueryWrapper<SalesOrderItem>()
-                        .eq(SalesOrderItem::getOrderId, o.getId()));
-                orderMapper.deleteById(o.getId());
+                // sales_order(_item) 继承 BaseEntity 的 @TableLogic：mapper 层 delete/deleteById
+                // 只会置 deleted=1，物理行仍在，每次 mvn test 都会在 dev 库里累积——用原生 JDBC
+                // 物理删除，同下面 inventory_stock/supplier_product 清理已经在用的手法。
+                jdbc.update("DELETE FROM sales_order_item WHERE order_id = ?", o.getId());
+                jdbc.update("DELETE FROM sales_order WHERE id = ?", o.getId());
             }
         }
         usedPhones.clear();
@@ -364,5 +370,55 @@ class SalesOrderImportServiceTest {
         InventoryStock s = stockMapper.selectOne(new LambdaQueryWrapper<InventoryStock>()
                 .eq(InventoryStock::getSupplierProductId, supplierProductId));
         return s == null ? 0 : s.getQuantity();
+    }
+
+    /**
+     * 700/3 除不尽：unitPrice 四舍五入到 233.33，233.33*3=699.99≠700.00。complete() 曾经拿
+     * unitPrice 回乘算实收，会让这单结算成 699.99，漂移进 DashboardMapper 的营收统计。
+     * 未拒收时必须直接拿 amount 原值结算，端到端验证「实收精确等于 Excel 总额」这个不变量
+     * 一路保持到订单完成，而不只是停在 create() 那一步。
+     */
+    @Test
+    void complete_settles_to_exact_spreadsheet_total_for_uneven_division() throws Exception {
+        SupplierProduct p = anyProduct(0);
+        String phone = uniquePhone("0562");
+
+        importService.importExcel(xlsx(
+                row("M1", 700, "Uneven Settle", phone, "addr", p.getProductCode(), 3, SERIAL_D1)));
+
+        SalesOrder o = orderMapper.selectList(new LambdaQueryWrapper<SalesOrder>()
+                .eq(SalesOrder::getCustomerPhone, phone)).get(0);
+
+        logisticsService.dispatch(o.getId(), 1L, new BigDecimal("15"));
+        logisticsService.updateStatus(o.getId(), SalesConst.SIGNED, null);
+        logisticsService.complete(o.getId());
+
+        SalesOrder settled = orderMapper.selectById(o.getId());
+        assertEquals(0, new BigDecimal("700.00").compareTo(settled.getActualAmount()),
+                "700/3 四舍五入回乘=699.99，实收必须精确等于 Excel 的 700.00，不漂移");
+    }
+
+    /**
+     * 一个合并了多行的订单，只有第 2 行编码非法：recordFailure 曾经无脑报分组第一个非空
+     * 编码（第 1 行，明明合法），把操作员指向错的行。合并多行订单正是本功能的常态用例。
+     */
+    @Test
+    void reports_the_actually_failing_product_code_not_the_groups_first() throws Exception {
+        SupplierProduct p = anyProduct(0);
+        String phone = uniquePhone("0561");
+        String badCode = "NO-SUCH-CODE-YYY";
+
+        SalesOrderImportResultVO res = importService.importExcel(xlsx(
+                row("L1", 100, "Multi Row", phone, "addr", p.getProductCode(), 1, SERIAL_D1),
+                row("L2", 100, "Multi Row", phone, "addr", badCode, 1, SERIAL_D1)));
+
+        assertEquals(1, res.getOrderCount());
+        assertEquals(0, res.getSuccess());
+        assertEquals(1, res.getFailed());
+        assertEquals(badCode, res.getErrors().get(0).getProductCode(),
+                "应报告实际失败的第二行编码，而不是分组内第一个（有效）编码");
+
+        assertTrue(orderMapper.selectList(new LambdaQueryWrapper<SalesOrder>()
+                .eq(SalesOrder::getCustomerPhone, phone)).isEmpty());
     }
 }

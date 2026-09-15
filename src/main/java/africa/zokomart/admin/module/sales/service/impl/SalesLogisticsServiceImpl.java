@@ -16,6 +16,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.time.LocalDateTime;
 import java.util.List;
 
@@ -102,13 +103,29 @@ public class SalesLogisticsServiceImpl implements SalesLogisticsService {
                 Wrappers.<SalesOrderItem>lambdaQuery().eq(SalesOrderItem::getOrderId, orderId));
         BigDecimal actual = BigDecimal.ZERO;
         for (SalesOrderItem item : items) {
-            BigDecimal itemActual = item.getUnitPrice()
-                    .multiply(BigDecimal.valueOf(item.getQty() - item.getRejectQty()));
-            item.setActualAmount(itemActual);
+            item.setActualAmount(itemActualAmount(item));
             itemMapper.updateById(item);
-            actual = actual.add(itemActual);
+            actual = actual.add(item.getActualAmount());
         }
         finish(order, actual);
+    }
+
+    /**
+     * 明细实收 = amount 按未拒收比例折算，而不是拿 unitPrice 重新相乘。
+     * amount 是 Excel 行小计的原值（导入时 unitPrice = amount/qty 四舍五入到 2 位，
+     * 除不尽会有尾差，比如 700/3=233.33，233.33*3=699.99≠700.00）；用 unitPrice 回乘
+     * 会让「实收总额精确等于 Excel 之和」这个不变量在结算这一步失效。
+     * 未拒收（reject=0，最常见）直接用 amount 原值，保证分毫不差；
+     * 有拒收时才需要按比例折算，此时本就没有「精确等于原值」的基准可言。
+     */
+    private BigDecimal itemActualAmount(SalesOrderItem item) {
+        if (item.getRejectQty() == 0) {
+            return item.getAmount();
+        }
+        int remaining = item.getQty() - item.getRejectQty();
+        return item.getAmount()
+                .multiply(BigDecimal.valueOf(remaining))
+                .divide(BigDecimal.valueOf(item.getQty()), 2, RoundingMode.HALF_UP);
     }
 
     /** REJECTED 全拒签：回补全部未拒收数量并自动完成、实收 0。 */

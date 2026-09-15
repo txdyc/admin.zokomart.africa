@@ -9,6 +9,7 @@ import org.dhatim.fastexcel.reader.Row;
 import org.dhatim.fastexcel.reader.Sheet;
 
 import java.io.ByteArrayInputStream;
+import java.io.IOException;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.LocalDate;
@@ -17,8 +18,10 @@ import java.time.format.DateTimeParseException;
 import java.time.format.ResolverStyle;
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
+import java.util.stream.Stream;
 
 /**
  * 销售订单 Excel(.xlsx) 解析：读第一个 sheet，第 1 行为表头。
@@ -36,36 +39,47 @@ public class SalesOrderExcelParser {
         if (bytes == null || bytes.length == 0) {
             throw new BusinessException(ResultCode.IMPORT_FILE_INVALID);
         }
-        List<Row> raw = readRows(bytes);
-        if (raw.isEmpty()) {
-            throw new BusinessException(ResultCode.IMPORT_FILE_INVALID);
-        }
-        Map<String, Integer> idx = headerIndex(raw.get(0));
-        List<Row> data = raw.subList(1, raw.size());
-        if (data.size() > SalesImportConst.MAX_ROWS) {
-            throw new BusinessException(ResultCode.IMPORT_TOO_MANY_ROWS);
-        }
-        List<SalesImportRow> out = new ArrayList<>(data.size());
-        for (Row r : data) {
-            if (isBlankRow(r, idx)) {
-                continue;
-            }
-            out.add(toRow(r, idx));
-        }
-        return out;
-    }
-
-    private List<Row> readRows(byte[] bytes) {
         try (ReadableWorkbook wb = new ReadableWorkbook(new ByteArrayInputStream(bytes))) {
             Sheet sheet = wb.getFirstSheet();
             if (sheet == null) {
                 throw new BusinessException(ResultCode.IMPORT_FILE_INVALID);
             }
-            return sheet.read();
+            return parseSheet(sheet);
         } catch (BusinessException e) {
             throw e;
         } catch (Exception e) {
             throw new BusinessException(ResultCode.IMPORT_FILE_INVALID);
+        }
+    }
+
+    /**
+     * 用 {@link Sheet#openStream()} 边读边数，一旦超过 {@link SalesImportConst#MAX_ROWS}
+     * 立即抛错并停止继续从底层解析器拉取后续行。
+     * 不用 {@link Sheet#read()}：那会先把整个 sheet 物化成 List 再检查行数上限——
+     * .xlsx 是 zip 压缩的 XML，畸形超大 sheet 能在「检查生效」之前就把堆吃满
+     * （压缩炸弹），5MB 的 multipart 上限挡不住这种攻击。
+     */
+    private List<SalesImportRow> parseSheet(Sheet sheet) throws IOException {
+        try (Stream<Row> stream = sheet.openStream()) {
+            Iterator<Row> it = stream.iterator();
+            if (!it.hasNext()) {
+                throw new BusinessException(ResultCode.IMPORT_FILE_INVALID);
+            }
+            Map<String, Integer> idx = headerIndex(it.next());
+            List<SalesImportRow> out = new ArrayList<>();
+            int count = 0;
+            while (it.hasNext()) {
+                Row r = it.next();
+                count++;
+                if (count > SalesImportConst.MAX_ROWS) {
+                    throw new BusinessException(ResultCode.IMPORT_TOO_MANY_ROWS);
+                }
+                if (isBlankRow(r, idx)) {
+                    continue;
+                }
+                out.add(toRow(r, idx));
+            }
+            return out;
         }
     }
 
