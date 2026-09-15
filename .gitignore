@@ -9,3 +9,6 @@ src/main/resources/application-local.yml
 
 # 本地上传文件
 /uploads/
+
+# SDD 工作区（本地临时，勿提交）
+.superpowers/
