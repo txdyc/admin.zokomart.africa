@@ -165,4 +165,20 @@ class SalesOrderExcelParserTest {
         assertNull(rows.get(0).error(), "City 可为空");
         assertEquals("", rows.get(0).city());
     }
+
+    @Test
+    void numeric_cells_render_as_plain_digits() throws Exception {
+        List<SalesImportRow> rows = new SalesOrderExcelParser().parse(xlsx(FULL_HEADER,
+                new Object[]{"N1", 100, "N", "Accra", "addr", 244292054, "P", 55, 1, "", 46280},
+                new Object[]{"N2", 100, "N", "Accra", "addr", 12345678901L, "P", 999999999, 1, "", 46280}));
+
+        assertEquals(2, rows.size());
+        assertNull(rows.get(0).error(), "数字单元格不应报错: " + rows.get(0).error());
+        assertEquals("244292054", rows.get(0).phone(), "9 位数字电话应保留原样，不带科学计数或小数点");
+        assertEquals("55", rows.get(0).productCode(), "数字产品编码应保留原样");
+
+        assertNull(rows.get(1).error(), "大数字不应报错: " + rows.get(1).error());
+        assertEquals("12345678901", rows.get(1).phone(), "大数字不应变成科学计数法");
+        assertEquals("999999999", rows.get(1).productCode());
+    }
 }
