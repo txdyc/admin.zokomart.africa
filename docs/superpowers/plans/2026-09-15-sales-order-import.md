@@ -2345,13 +2345,20 @@ sed -i 's|<si><t>Sake Price</t>|<si><t>Sale Price</t>|' xl/sharedStrings.xml
 grep -c "Sale Price" xl/sharedStrings.xml
 ```
 
-Expected: 输出 `1`。然后重新打包（先写 mimetype 无关，xlsx 无此要求，直接整目录打包即可）：
+Expected: 输出 `1`。然后重新打包。
+
+**注意**：本机 Git Bash **没有 `zip`**（`python`/`python3` 也是 Windows 商店占位符，不可用），
+用 JDK 自带的 `jar` 打包 —— 它写出的就是标准 zip，xlsx 只需要这个：
 
 ```bash
-cd /tmp/tplfix && rm -f out.xlsx && zip -q -r -X out.xlsx . && \
+cd /tmp/tplfix && rm -f out.xlsx && \
+jar --create --file out.xlsx --no-manifest -C . . && \
+unzip -l out.xlsx | grep -c "xl/worksheets/sheet1.xml" && \
 cp out.xlsx "D:/GHANA/claude/admin.zokomart.africa/utils/OrdersTemplate.xlsx" && \
 echo replaced
 ```
+
+Expected: 先打印 `1`（确认打包结果里有 sheet），再打印 `replaced`。
 
 - [ ] **Step 2: 确认修正后的模板能被解析器读懂**
 
