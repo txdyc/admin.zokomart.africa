@@ -18,6 +18,7 @@ import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.jdbc.core.JdbcTemplate;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
@@ -41,6 +42,8 @@ class SalesOrderCreateFieldsTest {
     InventoryStockMapper stockMapper;
     @Autowired
     InventoryTransactionMapper txMapper;
+    @Autowired
+    JdbcTemplate jdbc;
 
     /** 取库里任意一个可用的供应商产品，避免测试依赖特定种子数据。 */
     private Long anySupplierProductId() {
@@ -77,9 +80,12 @@ class SalesOrderCreateFieldsTest {
     /** 撤销 create() 的全部副作用：库存复原到快照值、删除本单产生的库存流水、再删订单与明细。 */
     private void cleanup(Long orderId, Long supplierProductId, Integer qtyBeforeOrder) {
         if (qtyBeforeOrder == null) {
-            // 下单前该产品没有库存记录：changeStock 会新建一行，这里直接删掉，恢复"无库存记录"状态
-            stockMapper.delete(new LambdaQueryWrapper<InventoryStock>()
-                    .eq(InventoryStock::getSupplierProductId, supplierProductId));
+            // 下单前该产品没有库存记录：changeStock 会新建一行，这里必须物理删除恢复"无库存记录"状态。
+            // 不能用 stockMapper.delete()：InventoryStock 继承 BaseEntity 的 @TableLogic 逻辑删除，
+            // mapper 层 delete 只会置 deleted=1，物理行仍占着 (supplier_product_id) 唯一键，
+            // 下次测试对同一产品建库存会撞唯一键冲突，MAX_RETRY 耗尽后 changeStock 报「库存更新冲突」——
+            // 同一个坑见 SalesOrderImportServiceTest，这里用原生 JDBC 绕开逻辑删除拦截器做真正的物理删除。
+            jdbc.update("DELETE FROM inventory_stock WHERE supplier_product_id = ?", supplierProductId);
         } else {
             stockMapper.update(null, new LambdaUpdateWrapper<InventoryStock>()
                     .eq(InventoryStock::getSupplierProductId, supplierProductId)

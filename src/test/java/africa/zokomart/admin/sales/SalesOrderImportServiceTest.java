@@ -69,6 +69,8 @@ class SalesOrderImportServiceTest {
     final List<String> usedPhones = new ArrayList<>();
     /** supplierProductId -> quantity 测试开始前的快照（null = 当时无库存记录）；cleanup 按快照绝对值复原。 */
     final Map<Long, Integer> stockSnapshots = new HashMap<>();
+    /** 测试内临时建的 supplier_product 夹具（如歧义编码用例），cleanup 时物理删除。 */
+    final List<Long> fixtureProductIds = new ArrayList<>();
 
     @AfterEach
     void cleanup() {
@@ -101,6 +103,15 @@ class SalesOrderImportServiceTest {
             }
         }
         stockSnapshots.clear();
+
+        // supplier_product 也继承 BaseEntity 的 @TableLogic：mapper 层 delete 只会置 deleted=1，
+        // 物理行仍占着 (supplier_id, product_code) 唯一键。夹具产品编码是本测试临时造的，
+        // 必须物理删除，否则下次跑测试用同样前缀生成的编码理论上还能再撞（虽然带纳秒后缀概率极低，
+        // 但留着一条没有业务意义的幽灵行本身就是需要避免的污染）。
+        for (Long id : fixtureProductIds) {
+            jdbc.update("DELETE FROM supplier_product WHERE id = ?", id);
+        }
+        fixtureProductIds.clear();
     }
 
     /**
@@ -127,6 +138,16 @@ class SalesOrderImportServiceTest {
         InventoryStock s = stockMapper.selectOne(new LambdaQueryWrapper<InventoryStock>()
                 .eq(InventoryStock::getSupplierProductId, supplierProductId));
         return s == null ? null : s.getQuantity();
+    }
+
+    /** 建一个 supplier_product 夹具，登记进 fixtureProductIds 供 cleanup 物理删除。 */
+    private void fixtureProduct(Long supplierId, String productCode) {
+        SupplierProduct sp = new SupplierProduct();
+        sp.setSupplierId(supplierId);
+        sp.setName("Import Test Fixture");
+        sp.setProductCode(productCode);
+        supplierProductMapper.insert(sp);
+        fixtureProductIds.add(sp.getId());
     }
 
     private MockMultipartFile xlsx(Object[]... rows) throws Exception {
@@ -233,6 +254,33 @@ class SalesOrderImportServiceTest {
 
         assertTrue(orderMapper.selectList(new LambdaQueryWrapper<SalesOrder>()
                 .eq(SalesOrder::getCustomerPhone, badPhone)).isEmpty(), "失败单不得留残缺数据");
+    }
+
+    @Test
+    void ambiguous_product_code_across_suppliers_fails_that_order_only() throws Exception {
+        List<Long> supplierIds = jdbc.queryForList(
+                "SELECT id FROM supplier WHERE deleted = 0 ORDER BY id LIMIT 2", Long.class);
+        assertTrue(supplierIds.size() >= 2, "dev 库需要至少 2 个 supplier 才能跑本测试");
+        // product_code 只在供应商内唯一（(supplier_id, product_code) 联合唯一），
+        // 跨供应商可能重名——纳秒后缀确保这个测试编码不会撞真实数据。
+        String code = "IMPTEST-" + System.nanoTime();
+        fixtureProduct(supplierIds.get(0), code);
+        fixtureProduct(supplierIds.get(1), code);
+        String phone = uniquePhone("0560");
+
+        SalesOrderImportResultVO res = importService.importExcel(xlsx(
+                row("K1", 100, "Ambiguous Code", phone, "addr", code, 1, SERIAL_D1)));
+
+        assertEquals(1, res.getOrderCount());
+        assertEquals(0, res.getSuccess());
+        assertEquals(1, res.getFailed(), "编码歧义（>1 个供应商产品匹配）应让整单失败");
+        assertEquals(1, res.getErrors().size());
+        String reason = res.getErrors().get(0).getReason();
+        assertTrue(reason.contains(code), "原因应指出具体的歧义编码");
+        assertTrue(reason.contains("2"), "原因应指出匹配到的数量");
+
+        assertTrue(orderMapper.selectList(new LambdaQueryWrapper<SalesOrder>()
+                .eq(SalesOrder::getCustomerPhone, phone)).isEmpty(), "歧义单不得留残缺数据");
     }
 
     @Test
