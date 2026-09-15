@@ -18,16 +18,16 @@ Branch: `feat/sales-order-import` (both repos), cut from `feat/wc-multi-site-syn
 | # | 决策 | 取值 |
 |---|---|---|
 | 1 | `Order ID` 粒度 | **行级**（明细号），**不能**用作分组键 |
-| 2 | 分组键 | `Phone Number` + `Customer Name` + `Shipping Address` 三者一致 |
+| 2 | 分组键 | `Phone Number` + `Customer Name` + `Shipping Address` + `Order Date` 四者一致<br>（同一客户**跨天**下单拆成两单，不报错） |
 | 3 | `Sale Price` 含义 | **行小计**（= 单价 × 数量） |
 | 4 | 库存 | **照常扣减**，与手工下单完全一致（`SALES_OUT` 流水，允许负库存） |
 | 5 | `Product Code` 查不到 | **整单失败**，文件内其余订单照常导入 |
 | 6 | `Product Code` 匹配到多条 | 视为歧义，**整单失败**并报错 |
 | 7 | `Status` 列 | **忽略其值**，一律 `PENDING_DISPATCH`；**表头可缺**该列 |
 | 8 | `Order Date` | 新增 `sales_order.order_date` 列，**同时** `create_time` 也写该日期 |
-| 9 | `Order Date` 为空 | **整单失败**（它是查重键的一部分） |
+| 9 | `Order Date` 为空/无法解析 | **整单失败**（它是分组键与查重键的一部分） |
 | 10 | `City` | 新增 `sales_order.city` 列 |
-| 11 | 重复导入 | 库内按 `归一化电话 + 姓名 + 地址 + order_date` 查重，命中则**跳过**并单独计数 |
+| 11 | 重复导入 | 库内按**同一个分组键**查重，命中则**跳过**并单独计数 |
 | 12 | 电话归一化 | 做**国际区号归一**（`0244239227` ≡ `233244239227` ≡ `244239227`） |
 | 13 | 电话入库格式 | **存 Excel 原值**；归一值仅用于分组与查重 |
 | 14 | `salespersonId` | **当前导入操作人** |
@@ -92,21 +92,27 @@ else if digits 以 "0"   开头 且 长度 10 -> 去掉前导 "0"
 上传 .xlsx
   → 解析首个 sheet，校验表头与行数
   → 逐行取值（行级字段错误不立刻失败，挂到所属分组上）
-  → 按 归一化(phone|name|address) 分组，LinkedHashMap 保留文件原始顺序
+  → 按 归一化(phone|name|address|orderDate) 分组，LinkedHashMap 保留文件原始顺序
   → 一次性查出这批 order_date 涉及的全部已有订单，在内存里建查重集合
   → 逐组处理（每组一个独立事务）
   → 汇总结果
 ```
 
+**分组键 = `归一化电话 | 归一化姓名 | 归一化地址 | order_date`**
+
+日期进键，所以同一个客户在不同日期下的单会自然落到不同组，**拆成两张订单**，
+不需要额外校验也不会报错。查重用的是同一个键，两者定义一致。
+
+**日期缺失的行**无法构成合法键：按 `phone|name|address` 单独归为一个失败组，
+整组记错误（原因"Order Date 为空或无法解析"），不入库。
+
 **逐组处理**
 
 1. 该组内任一行有字段错误 → 整组失败，记错误，继续下一组。
-2. 组内各行的 `Order Date` 必须一致；不一致 → 整组失败。
-   （分组键不含日期，理论上同客户跨天会被并到一起，这道校验把它挡下来。）
-3. 按 `product_code` 查 `supplier_product`（`deleted = 0`）：0 条 → 整组失败；> 1 条 → 整组失败（歧义）。
-4. 查重集合命中 → **跳过**，`skipped + 1`。
-5. 组装 `SalesOrderCreateDTO` → 调 `SalesOrderService.create(dto)`。
-6. 新建成功的订单键**加入查重集合**，防同一文件内后续重复。
+2. 按 `product_code` 查 `supplier_product`（`deleted = 0`）：0 条 → 整组失败；> 1 条 → 整组失败（歧义）。
+3. 查重集合命中 → **跳过**，`skipped + 1`。
+4. 组装 `SalesOrderCreateDTO` → 调 `SalesOrderService.create(dto)`。
+5. 新建成功的订单键**加入查重集合**，防同一文件内后续重复。
 
 **金额计算**
 
@@ -234,7 +240,7 @@ superadmin 走通配 `*`，无需显式授权。
 - 电话归一：`0244239227` / `233244239227` / `+233 244 239 227` 归并为一单，入库仍为原值
 - 编码：不存在 → 整单失败且其余单照常；匹配 2 条 → 歧义失败
 - 查重：同客户同日期已有订单 → skipped；同一文件内不会自我重复
-- 组内 `Order Date` 不一致 → 整单失败
+- **同一客户跨天**：同 phone/name/address、不同 `Order Date` 的行 → **拆成两张订单**，各自金额独立
 - 库存：导入后 `SALES_OUT` 流水与库存变化正确；单失败时该单**无**流水残留（事务边界）
 - 集成测试覆盖 `sales:order:import` 权限（有/无权限）
 
