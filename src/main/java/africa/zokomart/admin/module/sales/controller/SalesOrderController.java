@@ -8,7 +8,9 @@ import africa.zokomart.admin.common.result.Result;
 import africa.zokomart.admin.common.result.ResultCode;
 import africa.zokomart.admin.module.sales.constant.SalesConst;
 import africa.zokomart.admin.module.sales.dto.SalesOrderCreateDTO;
+import africa.zokomart.admin.module.sales.service.SalesOrderImportService;
 import africa.zokomart.admin.module.sales.service.SalesOrderService;
+import africa.zokomart.admin.module.sales.vo.SalesOrderImportResultVO;
 import africa.zokomart.admin.module.sales.vo.SalesOrderLabelVO;
 import africa.zokomart.admin.module.sales.vo.SalesOrderVO;
 import africa.zokomart.admin.module.sales.vo.OrderableProductVO;
@@ -18,6 +20,7 @@ import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.web.multipart.MultipartFile;
 
 import java.time.LocalDate;
 import java.util.List;
@@ -32,11 +35,18 @@ public class SalesOrderController {
     private static final String PERM_VIEW_ALL = "sales:order:list:all";
 
     private final SalesOrderService salesOrderService;
+    private final SalesOrderImportService salesOrderImportService;
 
     @PostMapping
     @SaCheckPermission("sales:order:create")
     public Result<Long> create(@Valid @RequestBody SalesOrderCreateDTO dto) {
         return Result.ok(salesOrderService.create(dto));
+    }
+
+    @PostMapping("/import")
+    @SaCheckPermission("sales:order:import")
+    public Result<SalesOrderImportResultVO> importExcel(@RequestPart("file") MultipartFile file) {
+        return Result.ok(salesOrderImportService.importExcel(file));
     }
 
     @GetMapping
