@@ -63,7 +63,10 @@ public class SalesOrderServiceImpl extends ServiceImpl<SalesOrderMapper, SalesOr
             item.setUnitPrice(unitPrice);
             item.setQty(qty);
             item.setRejectQty(0);
-            item.setAmount(unitPrice.multiply(BigDecimal.valueOf(qty)));
+            item.setAmount(in.getAmount() != null
+                    ? in.getAmount()
+                    : unitPrice.multiply(BigDecimal.valueOf(qty)));
+            item.setExternalOrderId(in.getExternalOrderId());
             items.add(item);
         }
 
@@ -76,6 +79,17 @@ public class SalesOrderServiceImpl extends ServiceImpl<SalesOrderMapper, SalesOr
         order.setSalespersonId(currentUserIdOrNull());
         order.setRemark(dto.getRemark());
         order.setCompleted(0);
+        order.setCity(dto.getCity());
+        // orderDate 非空 = 导入历史订单：create_time 一并归到业务日期，
+        // 使仪表盘/列表（均以 create_time 为口径）按订单实际发生日统计。
+        // 这是对「审计字段不手动 set」约定的一处刻意例外，范围仅限本分支；
+        // update_time 仍由自动填充写入真实时刻，导入时间不会丢失。
+        if (dto.getOrderDate() != null) {
+            order.setOrderDate(dto.getOrderDate());
+            order.setCreateTime(dto.getOrderDate().atStartOfDay());
+        } else {
+            order.setOrderDate(LocalDate.now());
+        }
         order.setTotalQty(items.stream().mapToInt(SalesOrderItem::getQty).sum());
         order.setTotalAmount(items.stream().map(SalesOrderItem::getAmount)
                 .reduce(BigDecimal.ZERO, BigDecimal::add));
@@ -98,7 +112,8 @@ public class SalesOrderServiceImpl extends ServiceImpl<SalesOrderMapper, SalesOr
                 Wrappers.<SalesOrder>lambdaQuery()
                         .eq(salespersonId != null, SalesOrder::getSalespersonId, salespersonId)
                         .eq(completed != null, SalesOrder::getCompleted, completed != null && completed ? 1 : 0)
-                        .orderByDesc(SalesOrder::getCreateTime));
+                        .orderByDesc(SalesOrder::getCreateTime)
+                        .orderByDesc(SalesOrder::getId));
         Page<SalesOrderVO> voPage = new Page<>(p.getCurrent(), p.getSize(), p.getTotal());
         voPage.setRecords(p.getRecords().stream().map(o -> toVO(o, false)).toList());
         return PageResult.of(voPage);
