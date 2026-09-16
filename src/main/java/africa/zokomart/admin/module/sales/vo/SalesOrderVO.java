@@ -3,6 +3,7 @@ package africa.zokomart.admin.module.sales.vo;
 import lombok.Data;
 
 import java.math.BigDecimal;
+import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.List;
 
@@ -14,6 +15,8 @@ public class SalesOrderVO {
     private String customerName;
     private String customerPhone;
     private String customerAddress;
+    private String city;
+    private LocalDate orderDate;
     private Long salespersonId;
     private Integer totalQty;
     private BigDecimal totalAmount;

@@ -17,6 +17,8 @@ public class SalesOrder extends BaseEntity {
     private String customerName;
     private String customerPhone;
     private String customerAddress;
+    private String city;
+    private java.time.LocalDate orderDate;
     private Long salespersonId;
     private Integer totalQty;
     private BigDecimal totalAmount;

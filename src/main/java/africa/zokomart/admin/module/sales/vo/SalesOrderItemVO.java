@@ -7,6 +7,7 @@ import java.math.BigDecimal;
 @Data
 public class SalesOrderItemVO {
     private Long id;
+    private String externalOrderId;
     private Long supplierProductId;
     private String productName;
     private String productCode;
