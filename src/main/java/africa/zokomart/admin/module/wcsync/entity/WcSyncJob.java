@@ -13,6 +13,7 @@ import java.time.LocalDateTime;
 @TableName("wc_sync_job")
 public class WcSyncJob extends BaseEntity {
     private Long supplierId;
+    private String siteCode;        // 目标站点 code；一次运行 × 一个站点 = 一个 job
     private String brandIds;        // JSON 数组字符串
     private String operator;
     private String status;          // 见 WcSyncJobStatus

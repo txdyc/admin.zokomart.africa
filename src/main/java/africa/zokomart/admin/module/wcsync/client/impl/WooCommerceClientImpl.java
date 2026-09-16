@@ -12,8 +12,6 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
-import lombok.RequiredArgsConstructor;
-import org.springframework.stereotype.Component;
 import org.springframework.util.StringUtils;
 
 import java.net.URI;
@@ -27,29 +25,34 @@ import java.util.ArrayList;
 import java.util.Base64;
 import java.util.List;
 
-@Component
-@RequiredArgsConstructor
+/**
+ * 按站点实例化的 WC 客户端：一个实例绑定一个 {@link WcSyncProperties.WcSite}。
+ * 由 {@link WooCommerceClientFactory} 创建并缓存，共享 ObjectMapper/HttpClient。
+ */
 public class WooCommerceClientImpl implements WooCommerceClient {
 
-    private final WcSyncProperties props;
-    private final ObjectMapper om = new ObjectMapper();
-    private final HttpClient http = HttpClient.newBuilder()
-            .connectTimeout(Duration.ofSeconds(10)).build();
+    private final WcSyncProperties.WcSite site;
+    private final ObjectMapper om;
+    private final HttpClient http;
+
+    public WooCommerceClientImpl(WcSyncProperties.WcSite site, ObjectMapper om, HttpClient http) {
+        this.site = site;
+        this.om = om;
+        this.http = http;
+    }
 
     @Override
     public boolean configured() {
-        return StringUtils.hasText(props.getBaseUrl())
-                && StringUtils.hasText(props.getConsumerKey())
-                && StringUtils.hasText(props.getConsumerSecret());
+        return site.configured();
     }
 
     private String base() {
-        String b = props.getBaseUrl().trim();
+        String b = site.getBaseUrl().trim();
         return b.endsWith("/") ? b.substring(0, b.length() - 1) : b;
     }
 
     private String authHeader() {
-        String raw = props.getConsumerKey() + ":" + props.getConsumerSecret();
+        String raw = site.getConsumerKey() + ":" + site.getConsumerSecret();
         return "Basic " + Base64.getEncoder().encodeToString(raw.getBytes(StandardCharsets.UTF_8));
     }
 

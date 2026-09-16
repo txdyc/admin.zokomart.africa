@@ -2,7 +2,9 @@ package africa.zokomart.admin.module.wcsync.service.impl;
 
 import africa.zokomart.admin.common.exception.BusinessException;
 import africa.zokomart.admin.common.result.ResultCode;
+import africa.zokomart.admin.module.ad.entity.AdImageSiteMedia;
 import africa.zokomart.admin.module.ad.entity.AdProductImage;
+import africa.zokomart.admin.module.ad.mapper.AdImageSiteMediaMapper;
 import africa.zokomart.admin.module.ad.mapper.AdProductImageMapper;
 import africa.zokomart.admin.module.basedata.entity.Brand;
 import africa.zokomart.admin.module.basedata.entity.Category;
@@ -16,6 +18,7 @@ import africa.zokomart.admin.module.wcsync.client.WcProduct;
 import africa.zokomart.admin.module.wcsync.client.WcProductDetail;
 import africa.zokomart.admin.module.wcsync.client.WcProductRef;
 import africa.zokomart.admin.module.wcsync.client.WooCommerceClient;
+import africa.zokomart.admin.module.wcsync.client.WooCommerceClientFactory;
 import africa.zokomart.admin.module.wcsync.support.AdDescriptionBlock;
 import africa.zokomart.admin.module.wcsync.config.WcSyncProperties;
 import africa.zokomart.admin.module.wcsync.entity.WcSyncJob;
@@ -29,6 +32,7 @@ import africa.zokomart.admin.module.wcsync.service.WcSyncRunner;
 import africa.zokomart.admin.module.wcsync.service.WcSyncService;
 import africa.zokomart.admin.module.wcsync.vo.WcSyncJobVO;
 import africa.zokomart.admin.module.wcsync.vo.WcSyncRowError;
+import africa.zokomart.admin.module.wcsync.vo.WcSyncSiteVO;
 import com.baomidou.mybatisplus.core.metadata.IPage;
 import com.baomidou.mybatisplus.core.toolkit.Wrappers;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -55,7 +59,7 @@ public class WcSyncServiceImpl implements WcSyncService {
     private static final int DEFAULT_STOCK_QUANTITY = 10;
     private static final int MAX_FAILED_ITEMS = 200;
 
-    private final WooCommerceClient wc;
+    private final WooCommerceClientFactory clientFactory;
     private final WcSyncProperties props;
     private final SupplierService supplierService;
     private final BrandService brandService;
@@ -67,6 +71,7 @@ public class WcSyncServiceImpl implements WcSyncService {
     private final WcSyncLock lock;
     private final ObjectMapper om;
     private final AdProductImageMapper adProductImageMapper;
+    private final AdImageSiteMediaMapper adImageSiteMediaMapper;
 
     // WcSyncRunner 依赖本 service，本 service 又依赖 runner —— @Lazy 打破循环。
     @Autowired
@@ -74,13 +79,19 @@ public class WcSyncServiceImpl implements WcSyncService {
     private WcSyncRunner runner;
 
     @Override
-    public Long startSync(Long supplierId, List<Long> brandIds) {
-        if (!wc.configured()) {
-            throw new BusinessException(ResultCode.WC_NOT_CONFIGURED);
+    public List<Long> startSync(Long supplierId, List<Long> brandIds, List<String> siteCodes) {
+        List<WcSyncProperties.WcSite> targets = resolveSites(siteCodes);
+        // 抢锁：任一站点被占则释放已抢到的，整个请求拒绝（不做跳过坏站点的静默降级）
+        List<WcSyncProperties.WcSite> acquired = new ArrayList<>();
+        for (WcSyncProperties.WcSite s : targets) {
+            if (!lock.tryAcquire(s.getCode())) {
+                acquired.forEach(a -> lock.release(a.getCode()));
+                throw new BusinessException(ResultCode.WC_SYNC_RUNNING,
+                        "站点正在同步中，请稍后再试: " + siteLabel(s));
+            }
+            acquired.add(s);
         }
-        if (!lock.tryAcquire()) {
-            throw new BusinessException(ResultCode.WC_SYNC_RUNNING);
-        }
+        List<String> dispatched = new ArrayList<>();   // 已成功派发的站点：其锁由对应 runSync 的 finally 释放
         try {
             if (supplierService.getById(supplierId) == null) {
                 throw new BusinessException(ResultCode.NOT_FOUND, "供应商不存在");
@@ -90,30 +101,44 @@ public class WcSyncServiceImpl implements WcSyncService {
             }
             List<SupplierProduct> products = loadProducts(supplierId, brandIds);
             String operator = currentOperator();
-            WcSyncJob job = jobService.createRunning(supplierId, brandIds, products.size(), operator);
-            runner.run(job.getId(), supplierId, brandIds);   // 异步派发，立即返回
-            return job.getId();
+            List<Long> jobIds = new ArrayList<>();
+            for (WcSyncProperties.WcSite s : targets) {
+                WcSyncJob job = jobService.createRunning(supplierId, brandIds, products.size(),
+                        operator, s.getCode());
+                runner.run(job.getId(), supplierId, brandIds, s.getCode());   // 异步派发（单线程 executor 顺序执行）
+                dispatched.add(s.getCode());
+                jobIds.add(job.getId());
+            }
+            return jobIds;
         } catch (RuntimeException e) {
-            lock.release();   // 派发前任何失败都要释放锁；成功派发后由 runSync 的 finally 释放
+            // 只释放未派发站点的锁；已派发站点的锁由其 runSync 的 finally 释放
+            for (WcSyncProperties.WcSite s : targets) {
+                if (!dispatched.contains(s.getCode())) lock.release(s.getCode());
+            }
             throw e;
         }
     }
 
     @Override
-    public void runSync(Long jobId, Long supplierId, List<Long> brandIds) {
+    public void runSync(Long jobId, Long supplierId, List<Long> brandIds, String siteCode) {
+        WcSyncProperties.WcSite site = clientFactory.site(siteCode);
+        WooCommerceClient wc = clientFactory.forSite(siteCode);
         WcSyncJob job = null;
         try {
             job = new WcSyncJob();
             job.setId(jobId);   // 复用 id 做 updateById；只 set 需要更新的字段
             List<SupplierProduct> products = loadProducts(supplierId, brandIds);
+            // 分类/品牌/广告图 media 缓存均为"本次运行的局部状态"，天然按站点隔离；
+            // 各 WordPress 的分类/品牌/media id 不同，绝不可跨站共享。
             Map<Long, Long> categoryCache = new HashMap<>();
             Map<Long, Long> brandCache = new HashMap<>();
+            Map<Long, Long> adMediaMap = loadAdMediaMap(siteCode);
             List<WcSyncRowError> failures = new ArrayList<>();
             int created = 0, updated = 0, drafted = 0, failed = 0, processed = 0;
 
             for (SupplierProduct p : products) {
                 try {
-                    String outcome = upsertOne(p, categoryCache, brandCache);
+                    String outcome = upsertOne(p, site, wc, categoryCache, brandCache, adMediaMap);
                     switch (outcome) {
                         case "CREATED" -> created++;
                         case "UPDATED" -> updated++;
@@ -125,7 +150,7 @@ public class WcSyncServiceImpl implements WcSyncService {
                     if (failures.size() < MAX_FAILED_ITEMS) {
                         failures.add(new WcSyncRowError(p.getId(), p.getProductCode(), e.getMessage()));
                     }
-                    saveRecord(p.getId(), null, p.getProductCode(), "FAILED", e.getMessage(), null, null);
+                    saveRecord(p.getId(), siteCode, null, p.getProductCode(), "FAILED", e.getMessage(), null, null);
                 }
                 processed++;
                 writeProgress(jobId, products.size(), processed, created, updated, drafted, failed, failures, null, null);
@@ -136,7 +161,7 @@ public class WcSyncServiceImpl implements WcSyncService {
                     status, LocalDateTime.now());
         } catch (Exception fatal) {
             // 致命失败：保留已落地的 total/processed/计数等诊断状态，只标记失败 + 记录原因，并打日志。
-            log.error("WC sync job {} failed fatally", jobId, fatal);
+            log.error("WC sync job {} (site {}) failed fatally", jobId, siteCode, fatal);
             LocalDateTime now = LocalDateTime.now();
             WcSyncJob existing = jobMapper.selectById(jobId);
             if (existing != null) {
@@ -154,7 +179,7 @@ public class WcSyncServiceImpl implements WcSyncService {
                 jobService.save(minimal);
             }
         } finally {
-            lock.release();
+            lock.release(siteCode);
         }
     }
 
@@ -168,13 +193,68 @@ public class WcSyncServiceImpl implements WcSyncService {
         return jobService.page(supplierId, current, size);
     }
 
+    @Override
+    public List<WcSyncSiteVO> listSites() {
+        List<WcSyncSiteVO> list = new ArrayList<>();
+        for (WcSyncProperties.WcSite s : clientFactory.sites()) {
+            WcSyncSiteVO vo = new WcSyncSiteVO();
+            vo.setCode(s.getCode());
+            vo.setName(s.getName());
+            vo.setConfigured(s.configured());
+            list.add(vo);
+        }
+        return list;
+    }
+
     // ---- 内部 ----
+
+    /** 解析目标站点：入参空=全部已配置站点；未知/未配置 code 整体拒绝并指明。 */
+    private List<WcSyncProperties.WcSite> resolveSites(List<String> siteCodes) {
+        List<WcSyncProperties.WcSite> all = clientFactory.sites();
+        if (siteCodes == null || siteCodes.isEmpty()) {
+            List<WcSyncProperties.WcSite> configured = all.stream()
+                    .filter(WcSyncProperties.WcSite::configured).toList();
+            if (configured.isEmpty()) {
+                throw new BusinessException(ResultCode.WC_NOT_CONFIGURED);
+            }
+            return configured;
+        }
+        List<WcSyncProperties.WcSite> targets = new ArrayList<>();
+        for (String code : siteCodes) {
+            WcSyncProperties.WcSite s = all.stream()
+                    .filter(x -> code != null && code.equals(x.getCode()))
+                    .findFirst()
+                    .orElseThrow(() -> new BusinessException(ResultCode.WC_NOT_CONFIGURED,
+                            "未知或未配置的站点: " + code));
+            if (!s.configured()) {
+                throw new BusinessException(ResultCode.WC_NOT_CONFIGURED,
+                        "站点缺少 base-url/密钥配置: " + siteLabel(s));
+            }
+            targets.add(s);
+        }
+        return targets;
+    }
+
+    private String siteLabel(WcSyncProperties.WcSite s) {
+        return s.getName() != null && !s.getName().isBlank() ? s.getName() : s.getCode();
+    }
 
     private List<SupplierProduct> loadProducts(Long supplierId, List<Long> brandIds) {
         return supplierProductMapper.selectList(
                 Wrappers.<SupplierProduct>lambdaQuery()
                         .eq(SupplierProduct::getSupplierId, supplierId)
                         .in(SupplierProduct::getBrandId, brandIds));
+    }
+
+    /** 批量载入该站点全部广告图 media id 映射（ad_image_id -> wc_media_id）。 */
+    private Map<Long, Long> loadAdMediaMap(String siteCode) {
+        Map<Long, Long> map = new HashMap<>();
+        for (AdImageSiteMedia m : adImageSiteMediaMapper.selectList(
+                Wrappers.<AdImageSiteMedia>lambdaQuery()
+                        .eq(AdImageSiteMedia::getSiteCode, siteCode))) {
+            map.put(m.getAdImageId(), m.getWcMediaId());
+        }
+        return map;
     }
 
     private String currentOperator() {
@@ -186,10 +266,12 @@ public class WcSyncServiceImpl implements WcSyncService {
         }
     }
 
-    /** 处理单个产品的 upsert + 图片决策，返回 CREATED/UPDATED/DRAFTED。 */
-    private String upsertOne(SupplierProduct p, Map<Long, Long> categoryCache, Map<Long, Long> brandCache) {
+    /** 处理单个产品的 upsert + 图片决策，返回 CREATED/UPDATED/DRAFTED。全部状态按站点隔离。 */
+    private String upsertOne(SupplierProduct p, WcSyncProperties.WcSite site, WooCommerceClient wc,
+                             Map<Long, Long> categoryCache, Map<Long, Long> brandCache,
+                             Map<Long, Long> adMediaMap) {
         boolean enabled = p.getStatus() != null && p.getStatus() == 1;
-        WcSyncRecord record = recordMapper.selectById(p.getId());
+        WcSyncRecord record = findRecord(p.getId(), site.getCode());
         Long wcId = record != null ? record.getWcProductId() : null;
         boolean isNew = (wcId == null);
         if (isNew) {
@@ -199,8 +281,8 @@ public class WcSyncServiceImpl implements WcSyncService {
             }
         }
 
-        long wcCategoryId = resolveWcCategory(p.getCategoryId(), categoryCache);
-        long wcBrandId = resolveWcBrand(p.getBrandId(), brandCache);
+        long wcCategoryId = resolveWcCategory(wc, p.getCategoryId(), categoryCache);
+        long wcBrandId = resolveWcBrand(wc, p.getBrandId(), brandCache);
 
         // ---- 图片决策 ----
         String url = p.getImageUrl();
@@ -218,7 +300,7 @@ public class WcSyncServiceImpl implements WcSyncService {
             imageSrc = url;       // 新建带图 / 图源变了 → 上传
         }
 
-        WcProduct wcProduct = build(p, wcCategoryId, wcBrandId, enabled, imageSrc);
+        WcProduct wcProduct = build(p, site, wcCategoryId, wcBrandId, enabled, imageSrc);
 
         // ---- 广告图（AI 生图保留图）：产品有/有过广告图才走此分支，否则行为与旧版完全一致 ----
         List<AdProductImage> adImages = adProductImageMapper.selectList(
@@ -238,8 +320,9 @@ public class WcSyncServiceImpl implements WcSyncService {
                 if (mainId != null) imgs.add(new WcImage(mainId, null));
             }
             for (AdProductImage ai : adImages) {
-                imgs.add(ai.getWcMediaId() != null
-                        ? new WcImage(ai.getWcMediaId(), null)
+                Long mediaId = adMediaMap.get(ai.getId());   // 本站点已上传过 → 按 id 引用，不重传
+                imgs.add(mediaId != null
+                        ? new WcImage(mediaId, null)
                         : new WcImage(null, publicAdUrl(ai.getFileUrl())));
             }
             wcProduct.setImagesOverride(imgs);
@@ -271,7 +354,7 @@ public class WcSyncServiceImpl implements WcSyncService {
             finalSyncedUrl = (record != null) ? record.getSyncedImageUrl() : null;
         }
 
-        saveRecord(p.getId(), wcId, p.getProductCode(), outcome, null, finalImageId, finalSyncedUrl);
+        saveRecord(p.getId(), site.getCode(), wcId, p.getProductCode(), outcome, null, finalImageId, finalSyncedUrl);
 
         // ---- 广告图回写 media id + 描述标记区块 ----
         if (adActive) {
@@ -284,9 +367,9 @@ public class WcSyncServiceImpl implements WcSyncService {
                 WcImage r = respImgs.get(idx);
                 if (r.src() != null) wcAdUrls.add(r.src());
                 AdProductImage ai = adImages.get(i);
-                if (ai.getWcMediaId() == null && r.id() != null) {
-                    ai.setWcMediaId(r.id());
-                    adProductImageMapper.updateById(ai);
+                if (adMediaMap.get(ai.getId()) == null && r.id() != null) {
+                    upsertAdMedia(ai.getId(), site.getCode(), r.id());
+                    adMediaMap.put(ai.getId(), r.id());
                 }
             }
             // 本次 upsert 未动描述，读到的是手写内容；以 WC 媒体 URL 写入标记区块。
@@ -307,18 +390,19 @@ public class WcSyncServiceImpl implements WcSyncService {
         return (base.endsWith("/") ? base.substring(0, base.length() - 1) : base) + fileUrl;
     }
 
-    private WcProduct build(SupplierProduct p, long wcCategoryId, long wcBrandId, boolean enabled, String imageSrc) {
+    private WcProduct build(SupplierProduct p, WcSyncProperties.WcSite site, long wcCategoryId,
+                            long wcBrandId, boolean enabled, String imageSrc) {
         BigDecimal wholesale = p.getWholesalePrice() == null ? BigDecimal.ZERO : p.getWholesalePrice();
-        String regularPrice = wholesale.multiply(props.getRegularMultiplier())
+        String regularPrice = wholesale.multiply(props.effectiveRegularMultiplier(site))
                 .setScale(2, RoundingMode.HALF_UP).toPlainString();
-        String salePrice = wholesale.multiply(props.getSaleMultiplier())
+        String salePrice = wholesale.multiply(props.effectiveSaleMultiplier(site))
                 .setScale(2, RoundingMode.HALF_UP).toPlainString();
         // imagesOverride 默认 null：沿用 imageSrc 旧语义；upsertOne 中广告图分支会按需覆盖。
         return new WcProduct(p.getName(), p.getProductCode(), regularPrice, salePrice,
                 DEFAULT_STOCK_QUANTITY, enabled ? "publish" : "draft", wcCategoryId, wcBrandId, imageSrc, null);
     }
 
-    private long resolveWcCategory(Long categoryId, Map<Long, Long> cache) {
+    private long resolveWcCategory(WooCommerceClient wc, Long categoryId, Map<Long, Long> cache) {
         if (categoryId == null) return 0L;
         return cache.computeIfAbsent(categoryId, cid -> {
             Category c = categoryService.getById(cid);
@@ -334,7 +418,7 @@ public class WcSyncServiceImpl implements WcSyncService {
         });
     }
 
-    private long resolveWcBrand(Long brandId, Map<Long, Long> cache) {
+    private long resolveWcBrand(WooCommerceClient wc, Long brandId, Map<Long, Long> cache) {
         if (brandId == null) return 0L;
         return cache.computeIfAbsent(brandId, bid -> {
             Brand b = brandService.getById(bid);
@@ -345,13 +429,41 @@ public class WcSyncServiceImpl implements WcSyncService {
         });
     }
 
-    private void saveRecord(Long supplierProductId, Long wcId, String sku, String status,
+    private WcSyncRecord findRecord(Long supplierProductId, String siteCode) {
+        return recordMapper.selectOne(Wrappers.<WcSyncRecord>lambdaQuery()
+                .eq(WcSyncRecord::getSupplierProductId, supplierProductId)
+                .eq(WcSyncRecord::getSiteCode, siteCode));
+    }
+
+    private void upsertAdMedia(Long adImageId, String siteCode, Long wcMediaId) {
+        AdImageSiteMedia existing = adImageSiteMediaMapper.selectOne(
+                Wrappers.<AdImageSiteMedia>lambdaQuery()
+                        .eq(AdImageSiteMedia::getAdImageId, adImageId)
+                        .eq(AdImageSiteMedia::getSiteCode, siteCode));
+        if (existing == null) {
+            AdImageSiteMedia m = new AdImageSiteMedia();
+            m.setAdImageId(adImageId);
+            m.setSiteCode(siteCode);
+            m.setWcMediaId(wcMediaId);
+            m.setCreateTime(LocalDateTime.now());
+            adImageSiteMediaMapper.insert(m);
+        } else {
+            existing.setWcMediaId(wcMediaId);
+            existing.setUpdateTime(LocalDateTime.now());
+            adImageSiteMediaMapper.update(existing, Wrappers.<AdImageSiteMedia>lambdaUpdate()
+                    .eq(AdImageSiteMedia::getAdImageId, adImageId)
+                    .eq(AdImageSiteMedia::getSiteCode, siteCode));
+        }
+    }
+
+    private void saveRecord(Long supplierProductId, String siteCode, Long wcId, String sku, String status,
                             String error, Long imageId, String syncedUrl) {
-        WcSyncRecord rec = recordMapper.selectById(supplierProductId);
+        WcSyncRecord rec = findRecord(supplierProductId, siteCode);
         boolean isNew = rec == null;
         if (isNew) {
             rec = new WcSyncRecord();
             rec.setSupplierProductId(supplierProductId);
+            rec.setSiteCode(siteCode);
         }
         if (wcId != null) rec.setWcProductId(wcId);
         rec.setSku(sku);
@@ -361,7 +473,9 @@ public class WcSyncServiceImpl implements WcSyncService {
         if (imageId != null) rec.setWcImageId(imageId);
         if (syncedUrl != null) rec.setSyncedImageUrl(syncedUrl);
         if (isNew) recordMapper.insert(rec);
-        else recordMapper.updateById(rec);
+        else recordMapper.update(rec, Wrappers.<WcSyncRecord>lambdaUpdate()
+                .eq(WcSyncRecord::getSupplierProductId, supplierProductId)
+                .eq(WcSyncRecord::getSiteCode, siteCode));
     }
 
     private void writeProgress(Long jobId, int total, int processed, int created, int updated,
