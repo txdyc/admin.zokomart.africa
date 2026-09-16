@@ -12,6 +12,7 @@ import java.math.BigDecimal;
 @TableName("sales_order_item")
 public class SalesOrderItem extends BaseEntity {
     private Long orderId;
+    private String externalOrderId;
     private Long supplierProductId;
     private String productName;
     private String productCode;
