@@ -14,6 +14,7 @@ import africa.zokomart.admin.module.sales.mapper.SalesOrderItemMapper;
 import africa.zokomart.admin.module.sales.mapper.SalesOrderMapper;
 import africa.zokomart.admin.module.sales.service.SalesOrderService;
 import africa.zokomart.admin.module.sales.vo.SalesOrderItemVO;
+import africa.zokomart.admin.module.sales.vo.SalesOrderLabelItemVO;
 import africa.zokomart.admin.module.sales.vo.SalesOrderLabelVO;
 import africa.zokomart.admin.module.sales.vo.SalesOrderVO;
 import africa.zokomart.admin.module.supplierproduct.entity.SupplierProduct;
@@ -32,6 +33,8 @@ import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
+import java.util.stream.Collectors;
 
 @Service
 @RequiredArgsConstructor
@@ -139,9 +142,28 @@ public class SalesOrderServiceImpl extends ServiceImpl<SalesOrderMapper, SalesOr
                 .eq(status != null && !status.isBlank(), SalesOrder::getStatus, status)
                 .eq(SalesOrder::getOrderDate, day)
                 .orderByAsc(SalesOrder::getCreateTime));
+        if (orders.isEmpty()) {
+            return List.of();
+        }
+        // 明细一次性按 order_id IN (...) 批量查出再分组，不逐单查（面单一次可能几十单，避免 N+1）。
+        // 按 id 升序 = 下单顺序，前端据此逐件展开贴纸，贴纸顺序才和实物对得上。
+        Map<Long, List<SalesOrderLabelItemVO>> itemsByOrder = itemMapper.selectList(
+                        Wrappers.<SalesOrderItem>lambdaQuery()
+                                .in(SalesOrderItem::getOrderId, orders.stream().map(SalesOrder::getId).toList())
+                                .orderByAsc(SalesOrderItem::getId))
+                .stream()
+                .collect(Collectors.groupingBy(SalesOrderItem::getOrderId,
+                        Collectors.mapping(it -> {
+                            SalesOrderLabelItemVO iv = new SalesOrderLabelItemVO();
+                            iv.setProductCode(it.getProductCode());
+                            iv.setProductName(it.getProductName());
+                            iv.setQty(it.getQty());
+                            return iv;
+                        }, Collectors.toList())));
         return orders.stream().map(o -> {
             SalesOrderLabelVO vo = new SalesOrderLabelVO();
             BeanUtils.copyProperties(o, vo);
+            vo.setItems(itemsByOrder.getOrDefault(o.getId(), List.of()));
             return vo;
         }).toList();
     }

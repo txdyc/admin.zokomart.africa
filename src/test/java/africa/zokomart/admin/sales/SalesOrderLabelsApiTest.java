@@ -142,4 +142,58 @@ class SalesOrderLabelsApiTest {
         }
         assertThat(found).as("按历史订单真实 order_date 请求应能查到，即便它早已不在“今天”").isTrue();
     }
+
+    /**
+     * 贴纸要印 product code，而一个订单可能含多个商品：面单出参必须带明细，前端才能
+     * 按明细逐件展开（A×1、B×2 → 第 1 张印 A，第 2/3 张印 B）。只给订单级的 totalQty
+     * 无法区分每张贴纸对应哪件货。明细顺序须与下单顺序一致，否则贴纸和实物对不上。
+     */
+    @Test
+    void labels_include_items_with_product_code_for_multi_product_order() throws Exception {
+        String su = login("superadmin", "Admin@123");
+        long ts = System.nanoTime();
+
+        long supplierId = postForId("/api/suppliers", "{\"name\":\"LBLI_Sup_" + ts + "\",\"status\":1}", su);
+        long spA = postForId("/api/supplier-products",
+                "{\"supplierId\":" + supplierId + ",\"name\":\"LBLI_ProdA_" + ts
+                        + "\",\"productCode\":\"LBLIA_" + ts + "\",\"wholesalePrice\":100,\"retailPrice\":200,"
+                        + "\"minPurchaseQty\":1,\"status\":1}", su);
+        long spB = postForId("/api/supplier-products",
+                "{\"supplierId\":" + supplierId + ",\"name\":\"LBLI_ProdB_" + ts
+                        + "\",\"productCode\":\"LBLIB_" + ts + "\",\"wholesalePrice\":50,\"retailPrice\":80,"
+                        + "\"minPurchaseQty\":1,\"status\":1}", su);
+        for (long spId : new long[] {spA, spB}) {
+            mvc.perform(put("/api/inventory/stocks/" + spId).header("Authorization", su)
+                            .contentType(MediaType.APPLICATION_JSON).content("{\"quantity\":10}"))
+                    .andExpect(jsonPath("$.code").value(0));
+        }
+
+        long orderId = postForId("/api/sales-orders",
+                "{\"customerName\":\"Yaa\",\"customerPhone\":\"024555\",\"customerAddress\":\"Cape Coast\",\"items\":[{\"supplierProductId\":"
+                        + spA + ",\"qty\":1},{\"supplierProductId\":" + spB + ",\"qty\":2}]}", su);
+
+        MvcResult res = mvc.perform(get("/api/sales-orders/labels").header("Authorization", su))
+                .andExpect(jsonPath("$.code").value(0)).andReturn();
+        JsonNode data = om.readTree(res.getResponse().getContentAsString()).at("/data");
+
+        JsonNode mine = null;
+        for (JsonNode n : data) {
+            if (n.get("id").asLong() == orderId) { mine = n; break; }
+        }
+        assertThat(mine).as("今日新建订单应在面单结果中").isNotNull();
+        assertThat(mine.get("totalQty").asInt()).isEqualTo(3);
+
+        JsonNode items = mine.get("items");
+        assertThat(items).as("面单出参须带明细，贴纸才能逐件印 product code").isNotNull();
+        assertThat(items.isArray()).isTrue();
+        assertThat(items).hasSize(2);
+
+        assertThat(items.get(0).get("productCode").asText()).isEqualTo("LBLIA_" + ts);
+        assertThat(items.get(0).get("productName").asText()).isEqualTo("LBLI_ProdA_" + ts);
+        assertThat(items.get(0).get("qty").asInt()).isEqualTo(1);
+
+        assertThat(items.get(1).get("productCode").asText()).isEqualTo("LBLIB_" + ts);
+        assertThat(items.get(1).get("productName").asText()).isEqualTo("LBLI_ProdB_" + ts);
+        assertThat(items.get(1).get("qty").asInt()).isEqualTo(2);
+    }
 }
