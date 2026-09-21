@@ -3,7 +3,11 @@ target/
 .idea/
 *.iml
 .vscode/
-# 本地密钥 profile，严禁入库
+# 本地密钥 profile，严禁入库。
+# 放在 config/ 而非 src/main/resources/ —— Spring Boot 默认会读工作目录下的 ./config/，
+# 且 file: 位置优先级高于 classpath，本地照常生效；同时它物理上不在资源根下，
+# 任何构建都不可能把密钥打进 jar。旧路径一并保留忽略，防止历史残留被提交。
+config/application-local.yml
 src/main/resources/application-local.yml
 *.log
 
