@@ -8,6 +8,7 @@ import africa.zokomart.admin.common.result.Result;
 import africa.zokomart.admin.common.result.ResultCode;
 import africa.zokomart.admin.module.sales.constant.SalesConst;
 import africa.zokomart.admin.module.sales.dto.SalesOrderCreateDTO;
+import africa.zokomart.admin.module.sales.dto.SalesOrderUpdateDTO;
 import africa.zokomart.admin.module.sales.service.SalesOrderImportService;
 import africa.zokomart.admin.module.sales.service.SalesOrderService;
 import africa.zokomart.admin.module.sales.vo.SalesOrderImportResultVO;
@@ -83,6 +84,20 @@ public class SalesOrderController {
         return Result.ok(vo);
     }
 
+    @PutMapping("/{id}")
+    @SaCheckPermission("sales:order:update")
+    public Result<Void> update(@PathVariable Long id, @Valid @RequestBody SalesOrderUpdateDTO dto) {
+        salesOrderService.update(id, scopeSalespersonId(), dto);
+        return Result.ok();
+    }
+
+    @DeleteMapping("/{id}")
+    @SaCheckPermission("sales:order:delete")
+    public Result<Void> delete(@PathVariable Long id) {
+        salesOrderService.delete(id, scopeSalespersonId());
+        return Result.ok();
+    }
+
     @GetMapping("/orderable-products")
     @SaCheckPermission("sales:order:create")
     public Result<PageResult<OrderableProductVO>> orderableProducts(
@@ -93,5 +108,10 @@ public class SalesOrderController {
             @RequestParam(defaultValue = "1") long current,
             @RequestParam(defaultValue = "10") long size) {
         return Result.ok(salesOrderService.orderableProducts(supplierId, brandId, categoryId, keyword, current, size));
+    }
+
+    /** 非全局查看权限者仅能操作本人订单（返回本人 id）；否则 null 表示不限。 */
+    private Long scopeSalespersonId() {
+        return StpUtil.hasPermission(PERM_VIEW_ALL) ? null : StpUtil.getLoginIdAsLong();
     }
 }

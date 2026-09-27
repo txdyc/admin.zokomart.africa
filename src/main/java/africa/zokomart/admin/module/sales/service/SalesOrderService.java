@@ -2,6 +2,7 @@ package africa.zokomart.admin.module.sales.service;
 
 import africa.zokomart.admin.common.result.PageResult;
 import africa.zokomart.admin.module.sales.dto.SalesOrderCreateDTO;
+import africa.zokomart.admin.module.sales.dto.SalesOrderUpdateDTO;
 import africa.zokomart.admin.module.sales.entity.SalesOrder;
 import africa.zokomart.admin.module.sales.vo.SalesOrderLabelVO;
 import africa.zokomart.admin.module.sales.vo.SalesOrderVO;
@@ -19,6 +20,13 @@ public interface SalesOrderService extends IService<SalesOrder> {
     PageResult<SalesOrderVO> page(Long salespersonId, Boolean completed, long current, long size);
 
     SalesOrderVO getDetail(Long id);
+
+    /** 管理员修正订单：客户信息任何状态可改；明细仅未派送时可改，库存按净变化调整。
+     *  salespersonId 非 null 时仅限本人订单。 */
+    void update(Long id, Long salespersonId, SalesOrderUpdateDTO dto);
+
+    /** 逻辑删除订单及明细并回补库存；仅待派送订单可删。salespersonId 非 null 时仅限本人订单。 */
+    void delete(Long id, Long salespersonId);
 
     /** 面单数据：按 status（默认 PENDING_DISPATCH）+ 当天(date，默认今日 create_time)；
      *  salespersonId 非 null 时仅本人。 */
