@@ -11,6 +11,10 @@ public final class InventoryConst {
     public static final String TYPE_SALES_OUT = "SALES_OUT";
     public static final String TYPE_REJECT_RETURN = "REJECT_RETURN";
     public static final String TYPE_MANUAL_ADJUST = "MANUAL_ADJUST";
+    /** 管理员修改销售订单明细引起的库存净变化（正=回补，负=追加出库）。 */
+    public static final String TYPE_SALES_EDIT = "SALES_EDIT";
+    /** 管理员删除销售订单，回补未拒收数量。 */
+    public static final String TYPE_SALES_CANCEL = "SALES_CANCEL";
 
     // 引用来源
     public static final String REF_ACTUAL_PURCHASE_ORDER = "ACTUAL_PURCHASE_ORDER";
